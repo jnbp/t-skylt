@@ -1,0 +1,11 @@
+{
+  "domain": "t_skylt",
+  "name": "T-Skylt Departure Boards",
+  "documentation": "https://github.com/jnbp/t-skylt",
+  "dependencies": [],
+  "codeowners": ["@jnbp"],
+  "requirements": ["beautifulsoup4>=4.0.0"],
+  "version": "0.1.0",
+  "iot_class": "local_polling",
+  "config_flow": true
+}
