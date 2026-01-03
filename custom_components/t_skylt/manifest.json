@@ -2,6 +2,7 @@
   "domain": "t_skylt",
   "name": "T-Skylt Departure Boards",
   "documentation": "https://github.com/jnbp/t-skylt",
+  "issue_tracker": "https://github.com/jnbp/t-skylt/issues",
   "dependencies": [],
   "codeowners": ["@jnbp"],
   "requirements": ["beautifulsoup4>=4.0.0"],
