@@ -3,6 +3,6 @@
   "render_readme": true,
   "filename": "t_skylt.zip",
   "homeassistant": "2024.1.0",
-  "country": "SE",
+  "country": "DE",
   "iot_class": "local_polling"
 }
