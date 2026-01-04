@@ -7,8 +7,8 @@ from .coordinator import TSkyltCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-# Added number, sensor, and text platforms
-PLATFORMS = ["switch", "select", "number", "sensor", "text"]
+# Registered platforms
+PLATFORMS = ["switch", "select", "number", "sensor", "binary_sensor", "text", "button"]
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up T-Skylt from a config entry."""
