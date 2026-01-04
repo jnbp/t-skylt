@@ -194,7 +194,8 @@ mode: single
 
 ### 2. The "Infinite Stations" Workaround (Rotation)
 
-By default, the board supports 2 active stations. In additions, this will always use the small font mode. However, you can use Home Assistant to **rotate through unlimited stations** by dynamically setting Station IDs via the integration.
+By default, the board supports 2 active stations. This will force you to switch to the small font mode. I was not satisfied by that. Wanted to have the normal font, and the possibility to even show more than two stations.
+So I came to the solution to let home assistant **rotate through unlimited stations** by dynamically setting Station IDs via the integration.
 
 #### ⚠️ Prerequisite: The "Warm-Up"
 
@@ -211,7 +212,7 @@ You can either track them in your developer mode directly on your browser or get
 
 In case you are using the VBB list, you need to be adjust the station id by **removing two zeros**.
 
-* Change this: `9000**00*100003`
+* Change this: `900000100003`
 * to this: `9000100003`
 
 I have not yet verified the ID formats for other operators (DB, SJ, etc.). If you figure out the logic, feel free to share your insights!
@@ -286,7 +287,7 @@ mode: single
 ## ❤️ Credits
 
 A massive thank you to **T-Skylt Sweden AB**!
-The collaboration with the manufacturer is quite cool fantastic, and their support allowed me to add some additional stuff to this integration possible.
+The collaboration with the manufacturer is quite cool, and their support allowed me to add some additional stuff to this integration.
 
 * **Hardware Manufacturer:** [T-Skylt Sweden AB](http://t-skylt.se)
 * **Integration Maintainer:** [@jnbp](https://github.com/jnbp)
