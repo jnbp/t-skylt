@@ -1,5 +1,6 @@
 """DataUpdateCoordinator for T-Skylt."""
 import logging
+import asyncio
 import aiohttp
 import async_timeout
 import re
@@ -21,6 +22,9 @@ class TSkyltCoordinator(DataUpdateCoordinator):
         self.base_url = f"http://{host}/"
         self.sw_version = "Unknown"
         
+        # Locking to prevent race conditions
+        self._lock = asyncio.Lock()
+        
         super().__init__(
             hass,
             _LOGGER,
@@ -29,31 +33,27 @@ class TSkyltCoordinator(DataUpdateCoordinator):
         )
 
     async def _async_update_data(self):
-        """Fetch data from the device."""
-        try:
-            # We fetch the main page to get most data
-            # Optimization: Timer data is technically on /?timer=set, but often 
-            # simple params are hidden in the main HTML inputs.
-            # Based on your HTML dump, inputs like 'mondayStartTime' are NOT on the main page,
-            # but on the timer page. To be efficient, we might need a second fetch
-            # or we accept that timers update only when we visit that page logic.
-            # For now, let's fetch the main page.
-            async with aiohttp.ClientSession() as session:
-                with async_timeout.timeout(15):
-                    async with session.get(self.base_url) as response:
-                        html = await response.text()
-                        
-                    # Fetch Timer page separately? 
-                    # To keep it simple and efficient, we will assume standard data on main page.
-                    # If inputs are missing, we might need to fetch /?timer=set.
-                    # Let's try fetching timer data only every 5th update to save resources?
-                    # For this version, let's keep it simple: Fetch main page.
-                    # If you need timer data refreshed, we might need a dedicated fetch.
-                    # Let's see if we can get by with just main page for status.
-                    
-                    return self.parse_html(html)
-        except Exception as err:
-            raise UpdateFailed(f"Error communicating with {self.host}: {err}")
+        """Fetch data from the device with locking and retry logic."""
+        async with self._lock:
+            return await self._fetch_data_internal()
+
+    async def _fetch_data_internal(self):
+        """Internal helper to perform the actual fetch with retries."""
+        attempts = 2
+        for attempt in range(1, attempts + 1):
+            try:
+                # No shared session to ensure Connection: close
+                async with aiohttp.ClientSession() as session:
+                    # High timeout for repeater latency
+                    with async_timeout.timeout(40):
+                        async with session.get(self.base_url, headers={"Connection": "close"}) as response:
+                            html = await response.text()
+                            return self.parse_html(html)
+            except Exception as err:
+                _LOGGER.warning(f"Attempt {attempt}/{attempts} failed fetching data from {self.host}: {err}")
+                if attempt == attempts:
+                    raise UpdateFailed(f"Error communicating with {self.host}: {err}")
+                await asyncio.sleep(2)
 
     def parse_html(self, html):
         """Parse HTML content to extract state."""
@@ -77,14 +77,11 @@ class TSkyltCoordinator(DataUpdateCoordinator):
             version_match = soup.find(string=re.compile(r"v\.\s*\d+\.\d+"))
             if version_match: self.sw_version = version_match.strip()
 
-        # --- Update Available Check ---
-        # Look for the update button. If it is NOT disabled, an update is available.
-        # <button ... onclick="...update=true" disabled=""> -> No Update
+        # --- Update Available ---
         update_btn = soup.find('button', onclick=re.compile(r'update=true'))
         data['update_available'] = False
-        if update_btn:
-            if not update_btn.has_attr('disabled'):
-                data['update_available'] = True
+        if update_btn and not update_btn.has_attr('disabled'):
+            data['update_available'] = True
 
         # --- Operator ---
         dropbtn = soup.find('button', class_='dropbtn')
@@ -137,15 +134,10 @@ class TSkyltCoordinator(DataUpdateCoordinator):
         data['mins'] = get_value('mins', '')
         data['user'] = get_value('user', '')
         
-        ns_sel = soup.find('select', {'id': 'newstation'})
-        data['newstation'] = "0"
-        if ns_sel:
-             opt = ns_sel.find('option', selected=True)
-             if opt: data['newstation'] = opt['value']
+        # REMOVED: Parsing of 'newstation'. The device does not report the active ID.
+        # We handle this state locally in text.py now.
 
         # --- Timers ---
-        # Note: If these fields are not on the main page, they will default to 00:00
-        # This is expected behavior until we implement multi-page fetching.
         days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
         for day in days:
             data[f'{day}_start'] = get_value(f'{day}StartTime', '00:00')
@@ -169,11 +161,13 @@ class TSkyltCoordinator(DataUpdateCoordinator):
         return data
 
     async def send_command(self, parameter):
-        """Send command only. Fire and forget."""
+        """Send command with locking to prevent collisions with status updates."""
         url = f"{self.base_url}{parameter}"
-        try:
-            async with aiohttp.ClientSession() as session:
-                 with async_timeout.timeout(5):
-                    await session.get(url)
-        except Exception as e:
-            _LOGGER.error(f"Error sending command {parameter}: {e}")
+        
+        async with self._lock:
+            try:
+                async with aiohttp.ClientSession() as session:
+                     with async_timeout.timeout(20):
+                        await session.get(url, headers={"Connection": "close"})
+            except Exception as e:
+                _LOGGER.error(f"Error sending command {parameter}: {e}")

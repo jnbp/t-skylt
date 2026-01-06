@@ -5,14 +5,15 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.restore_state import RestoreEntity
 from .const import DOMAIN
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
     coordinator = hass.data[DOMAIN][entry.entry_id]
     
     entities = [
-        # Station Group
-        TSkyltText(coordinator, "newstation", "Station: ID Input", "mdi:map-marker"),
+        # Station Group - Using SPECIAL class for Input
+        TSkyltStationInput(coordinator, "newstation", "Station: ID Input", "mdi:map-marker"),
         
         # View Group
         TSkyltText(coordinator, "no_more_departures", "View: No Departures Text", "mdi:message-text-outline"),
@@ -22,7 +23,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         TSkyltText(coordinator, "user", "System: E-Mail", "mdi:email", EntityCategory.CONFIG),
     ]
 
-    # Timer Group (Separate block)
+    # Timer Group
     days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
     for day in days:
         entities.append(TSkyltTimerText(coordinator, day, "start", f"Timer: {day} Start"))
@@ -31,6 +32,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     async_add_entities(entities)
 
 class TSkyltText(CoordinatorEntity, TextEntity):
+    """Generic text entity (read from device)."""
     def __init__(self, coordinator, key, name, icon, category=None):
         super().__init__(coordinator)
         self._key = key
@@ -57,7 +59,51 @@ class TSkyltText(CoordinatorEntity, TextEntity):
         self.coordinator.data[self._key] = value
         self.async_write_ha_state()
 
+class TSkyltStationInput(CoordinatorEntity, TextEntity, RestoreEntity):
+    """
+    Special Text Entity for Station ID.
+    The device does not report the active custom ID in the HTML (it defaults to 0/empty).
+    Therefore, we must NOT read from coordinator data, but keep local state
+    and restore it after restarts.
+    """
+    def __init__(self, coordinator, key, name, icon):
+        super().__init__(coordinator)
+        self._key = key
+        self._name_suffix = name
+        self._icon = icon
+        # We maintain our own state, independent of coordinator polling
+        self._attr_native_value = ""
+
+    async def async_added_to_hass(self):
+        """Restore last state."""
+        await super().async_added_to_hass()
+        state = await self.async_get_last_state()
+        if state and state.state not in (None, "unknown", "unavailable"):
+            self._attr_native_value = state.state
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(identifiers={(DOMAIN, self.coordinator.host)}, name="T-Skylt Board", manufacturer="T-Skylt Sweden AB", model="Departure Board", sw_version=self.coordinator.sw_version)
+    @property
+    def name(self): return f"T-Skylt {self._name_suffix}"
+    @property
+    def unique_id(self): return f"{self.coordinator.host}_{self._key}"
+    @property
+    def native_value(self):
+        # Always return local state, ignore coordinator data
+        return self._attr_native_value
+    @property
+    def icon(self): return self._icon
+
+    async def async_set_value(self, value: str) -> None:
+        encoded_val = urllib.parse.quote(value)
+        await self.coordinator.send_command(f"?{self._key}={encoded_val}")
+        # Update local state
+        self._attr_native_value = value
+        self.async_write_ha_state()
+
 class TSkyltTimerText(CoordinatorEntity, TextEntity):
+    """Timer specific text entity."""
     def __init__(self, coordinator, day, type, name):
         super().__init__(coordinator)
         self._day = day
