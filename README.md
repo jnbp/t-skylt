@@ -26,7 +26,8 @@ I developed this to solve my own need for better control over the board. While t
 3. [Automation Ideas & Recipes](#-automation-ideas--recipes)
     - [Turn board on based on light and presence sensor](#1-turn-board-on-based-on-light-and-presence-sensor)
     - [The "Infinite Stations" Workaround](#2-the-infinite-stations-workaround-rotation)
-4. [Credits](#-credits)
+4. [Technical Details](#-technical-details)
+5. [Credits](#-credits)
 
 ---
 
@@ -281,6 +282,40 @@ mode: single
 
 
 ```
+
+---
+
+## 🧠 Technical Details
+
+This integration is designed to be extremely robust against network latency and the hardware limitations of the T-Skylt board. Below is an overview of how it works under the hood.
+
+### ⚙️ How it works: Web Scraping & Polling
+The T-Skylt board does not provide a formal JSON API. Instead, this integration acts like a web browser:
+1.  **Fetching:** It performs an HTTP GET request to the device's root URL (`/`) to retrieve the raw HTML.
+2.  **Parsing:** It uses `BeautifulSoup` to parse the HTML structure. The state of the device (e.g., is the light on? what is the brightness?) is determined by inspecting HTML attributes like `checked` on checkboxes or `value` in input fields.
+3.  **Controlling:** To change settings, the integration sends HTTP requests with specific query parameters (e.g., `/?brightness=2`), mimicking the behavior of clicking buttons on the actual web interface.
+
+### 🛡️ Concurrency Control (The "Queue")
+The device is based on a microcontroller (likely ESP-based) with a single-threaded web server. It cannot handle multiple HTTP requests simultaneously. If Home Assistant tries to fetch the status (polling) at the exact same moment an automation sends a command, the device often drops the connection or freezes.
+* **Implementation:** An `asyncio.Lock` is used within the DataUpdateCoordinator.
+* **Effect:** Commands and Status Updates are strictly queued. If a status update is running, any button press waits until the update is finished (and vice versa). This ensures sequential processing and prevents overloading the chip.
+
+### 📡 WiFi Weakness & Latency Handling
+**My Setup & The Repeater Logic:**
+The WiFi antenna on the board is relatively weak. To ensure a stable connection, I placed a WiFi repeater directly next to the unit to bridge the signal to my main router. While this solves the signal strength issue, the repeater introduces additional network latency.
+
+To accommodate this setup and prevent the device from flickering to "Unavailable" in Home Assistant, the timeouts have been adjusted significantly:
+* **Fetch Timeout:** **40 seconds**. If the device takes 39 seconds to answer (e.g., due to repeater latency or busy processing), the integration waits patiently.
+* **Command Timeout:** **20 seconds**. When a button is pressed, the UI updates immediately (Optimistic Mode), but the backend keeps the connection open for up to 20 seconds to confirm the command was received.
+
+### 🔄 Smart Retry Logic
+Transient network errors are common with IoT devices. To avoid false alarms in the dashboard:
+* **Logic:** If a status update fails, the integration pauses for **2 seconds** and tries a **second time**.
+* **Result:** The device is only marked "Unavailable" if it genuinely fails to respond twice in a row.
+
+### 💓 Heartbeat & Socket Management
+* **Polling Interval:** Data is refreshed every **60 seconds** to minimize load.
+* **Cleanup:** Every request sends `Connection: close` headers to force the device to free up memory sockets immediately after a transaction, preventing memory leaks on the hardware.
 
 ---
 
