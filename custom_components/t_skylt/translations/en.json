@@ -1,0 +1,20 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "Setup T-Skylt Departure Board",
+                "description": "You can choose between directly using the IP address or the hostname.\n\n**Hostname is recommended** if you use a repeater, since in the case of an IP address change, the hostname will be newly resolved automatically.\n\nThe default hostname is usually `esp32-s3-zero.local`.",
+                "data": {
+                    "host": "Hostname or IP Address"
+                }
+            }
+        },
+        "error": {
+            "cannot_connect": "Failed to connect",
+            "unknown": "Unexpected error"
+        },
+        "abort": {
+            "already_configured": "Device is already configured"
+        }
+    }
+}
