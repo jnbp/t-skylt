@@ -14,17 +14,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
     entities = [
         # View Settings
-        # Scroll Speed with label mapping (Caption -> Value)
+        # Scroll Speed with clean labels (Caption -> Value)
         TSkyltSelect(coordinator, "scroll", "View: Scroll Speed", "mdi:speedometer", 
-                     {"Normal (0)": "0", "Low (1)": "1"}),
+                     {"Normal": "0", "Low": "1"}),
         
-        # Max Departures (previously a slider, now a dropdown)
+        # Max Departures (Dropdown 1-8)
         TSkyltSelect(coordinator, "maxdest", "Station: Max Departures", "mdi:format-list-numbered", 
                      [str(i) for i in range(1, 9)]), # 1 to 8
 
-        # Offset (previously duplicate or slider, now dropdown)
+        # Offset (Dropdown 0-30 minutes, full range)
         TSkyltSelect(coordinator, "offset", "Station: Offset / Hide Within", "mdi:clock-start", 
-                     ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "15", "20", "30"]),
+                     [str(i) for i in range(31)]), # Generates 0, 1, 2 ... 30
         
         # Display Hardware Settings
         # Width moved to CONFIG category
