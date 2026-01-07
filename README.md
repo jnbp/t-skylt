@@ -45,8 +45,8 @@ This integration exposes almost every known function of the board. Below is a co
 | **Operator** | `?operator` | Select the specific transport service (e.g., VBB, SL, DB, SJ). |
 | **Station ID Input** | `?newstation` | Text field to input the raw Station ID (see "Infinite Stations" below). |
 | **Transport Types** | `?type` | Toggle specific transport modes: **Subway**, **Bus**, **Train**, **Tram**, **Ship**. |
-| **Max Departures** | `?maxdest` | Limit the list to 1-8 departures. |
-| **Offset / Hide Within** | `?offset` | Hide departures leaving in less than X minutes (0-30 min). |
+| **Max Departures** | `?maxdest` | Dropdown to limit the list to 1-8 departures. |
+| **Offset / Hide Within** | `?offset` | Dropdown to hide departures leaving in less than X minutes (0-30 min). |
 
 ### 👁 Category: View
 *Configuration regarding *how* the data is presented.*
@@ -58,7 +58,7 @@ This integration exposes almost every known function of the board. Below is a co
 | **Multiple Stops** | `?multiple` | Enable grouping of multiple stops. |
 | **Show Station Name** | `?show_station` | Toggle displaying the station name in the header. |
 | **Sleep Mode** | `?sleep` | Turn off the display automatically if no departures are available. |
-| **Scroll Speed** | `?scroll` | Set text scrolling to **Normal** (0) or **Low** (1). |
+| **Scroll Speed** | `?scroll` | Select text scrolling speed: **Normal** (0) or **Low** (1). |
 | **No Departures Text** | `?no_more_departures` | Custom text shown when the board is empty. |
 | **Minutes Suffix** | `?mins` | Custom text for the minute abbreviation (e.g., "min"). |
 
@@ -68,22 +68,22 @@ This integration exposes almost every known function of the board. Below is a co
 | Entity / Function | API Parameter | Description |
 | :--- | :--- | :--- |
 | **Power** | `?onoff` | Turn the display output On or Off. |
-| **Brightness** | `?brightness` | Set brightness level: **Low**, **Medium**, **High**. |
+| **Brightness** | `?brightness` | Slider to set brightness level (0-2). |
 | **LED Tone** | `?color` | Adjust the color temperature: **Orange**, **Yellow**, **White**. |
-| **Width** | `?width` | Configure matrix width: **XS**, **X**, **XL**. |
 | **Color Highlight** | `?listcolor` | Enable/Disable colored highlighting of line numbers. |
 | **Small Font** | `?fontmini` | Force small font usage. |
 | **Line ID Cutoff** | `?line_length` | Trim long line numbers after X characters. |
-| **Rotate** | `/rotate` | Button to flip the display orientation by 180°. |
 
-### ⚙️ Category: System
-*Maintenance and device configuration.*
+### ⚙️ Category: System & Configuration
+*Maintenance and hardware configuration.*
 
 | Entity / Function | API Parameter | Description |
 | :--- | :--- | :--- |
+| **Width** | `?width` | Configure matrix width: **XS**, **X**, **XL** (Triggers Reboot). |
+| **Rotate** | `/rotate` | Button to flip the display orientation by 180°. |
+| **Reboot** | `/stop` | Restarts the device. |
 | **Timers** | `?set_timer` | Start/End time fields for every day of the week (Monday - Sunday). |
 | **Clear Timers** | `?cleartimer` | Button to delete all active schedules. |
-| **Reboot** | `/stop` | Restarts the device. |
 | **TX Power** | `?power` | Adjust the WiFi transmit power (dBm). |
 | **E-Mail** | `?user` | Store user email address on the device. |
 | **Language** | `?language` | Set system language (English/Swedish). |
@@ -92,6 +92,7 @@ This integration exposes almost every known function of the board. Below is a co
 | **Network Tools** | `/ping` / `/dns` | **Ping Test** and **DNS Info**. |
 
 ### 🔍 Sensors & Diagnostics
+* **Active IP:** Shows the currently used IP address (useful for dynamic environments).
 * **Update Available:** Binary sensor that checks if a new firmware version is detected.
 * **System Temperature:** Internal temperature of the ESP/Controller.
 * **Uptime:** Time since last reboot in minutes.
@@ -178,6 +179,8 @@ mode: single
 </details>
 
 ### 2. The "Infinite Stations" Workaround (Rotation)
+
+<details>
 
 By default, the board supports 2 active stations. This will force you to switch to the small font mode. I was not satisfied by that. Wanted to have the normal font, and the possibility to even show more than two stations.
 So I came to the solution to let home assistant **rotate through unlimited stations** by dynamically setting Station IDs via the integration.
@@ -270,12 +273,15 @@ mode: single
 ```
 
 </details>
+</details>
 
 ---
 
 ## 🧠 Technical Details
 
-This integration is designed to be extremely robust against network latency and the hardware limitations of the T-Skylt board. Below is an overview of how it works under the hood.
+This integration is designed to be robust against network latency and the hardware limitations of the T-Skylt board. Below is an overview of how it works under the hood.
+
+<details>
 
 ### ⚙️ How it works: Web Scraping & Polling
 
@@ -292,15 +298,14 @@ The device is based on a microcontroller (likely ESP-based) with a single-thread
 * **Implementation:** An `asyncio.Lock` is used within the DataUpdateCoordinator.
 * **Effect:** Commands and Status Updates are strictly queued. If a status update is running, any button press waits until the update is finished (and vice versa). This ensures sequential processing and prevents overloading the chip.
 
-### 📡 WiFi Weakness & Latency Handling
+### 📡 Smart IP Caching & History (Repeater Logic)
 
-**My Setup & The Repeater Logic:**
-The WiFi antenna on the board is relatively weak. To ensure a stable connection, I placed a WiFi repeater directly next to the unit to bridge the signal to my main router. While this solves the signal strength issue, the repeater introduces additional network latency.
+Many users operate the board behind a WiFi Repeater, which often results in the board receiving a new IP address dynamically while the hostname (`.local`) remains the same.
+To solve "Unavailable" errors caused by stale DNS caches in the operating system:
 
-To accommodate this setup and prevent the device from flickering to "Unavailable" in Home Assistant, the timeouts have been adjusted significantly:
-
-* **Fetch Timeout:** **40 seconds**. If the device takes 39 seconds to answer (e.g., due to repeater latency or busy processing), the integration waits patiently.
-* **Command Timeout:** **20 seconds**. When a button is pressed, the UI updates immediately (Optimistic Mode), but the backend keeps the connection open for up to 20 seconds to confirm the command was received.
+* **IP History:** The integration remembers the last 5 IP addresses that successfully connected.
+* **Smart Probing:** If the current IP fails, the integration immediately probes the history list with a very short timeout. This bypasses the OS DNS entirely and often reconnects within milliseconds if the board just switched back to a known IP.
+* **DNS Fallback:** Only if all known IPs fail, a fresh DNS lookup is performed.
 
 ### 🔄 Smart Retry Logic
 
@@ -313,6 +318,8 @@ Transient network errors are common with IoT devices. To avoid false alarms in t
 
 * **Polling Interval:** Data is refreshed every **60 seconds** to minimize load.
 * **Cleanup:** Every request sends `Connection: close` headers to force the device to free up memory sockets immediately after a transaction, preventing memory leaks on the hardware.
+
+</details>
 
 ---
 
