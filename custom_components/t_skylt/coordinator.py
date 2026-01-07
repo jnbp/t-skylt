@@ -18,9 +18,9 @@ _LOGGER = logging.getLogger(__name__)
 # --- Configuration Constants ---
 MAX_HISTORY_IPS = 5     # Maximum number of IPs to remember
 TIMEOUT_FULL = 20       # Seconds for standard data fetching
-TIMEOUT_PROBE = 4       # Seconds for fast connectivity checks (history probing)
-RETRY_ATTEMPTS = 3      # Phase 1: How often to retry the current IP
-RETRY_DELAY = 2         # Phase 1: Seconds to wait between retries
+TIMEOUT_PROBE = 4       # Seconds for fast connectivity checks
+RETRY_ATTEMPTS = 3      # Attempts on current IP before fallback
+RETRY_DELAY = 2         # Seconds between retries
 
 class TSkyltCoordinator(DataUpdateCoordinator):
     """Class to manage fetching T-Skylt data."""
@@ -37,7 +37,7 @@ class TSkyltCoordinator(DataUpdateCoordinator):
         # Current active IP used for communication
         self._cached_ip = host
         
-        # HISTORY: Store successful IPs to bypass stale DNS records.
+        # HISTORY: Store successful IPs
         if self._is_static_ip:
             self._known_ips = deque([host], maxlen=MAX_HISTORY_IPS)
         else:
@@ -51,11 +51,9 @@ class TSkyltCoordinator(DataUpdateCoordinator):
         )
 
     def _is_valid_ip(self, host_str: str) -> bool:
-        """Check if the string is a valid IPv4 address."""
         return bool(re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", host_str))
 
     async def _resolve_host(self) -> str:
-        """Resolve hostname to IP address."""
         if self._is_static_ip:
             return self.host
         try:
@@ -65,15 +63,13 @@ class TSkyltCoordinator(DataUpdateCoordinator):
             return self.host
 
     def _add_to_history(self, ip):
-        """Add IP to history, moving it to the front (most recent)."""
         if ip in self._known_ips:
-            self._known_ips.remove(ip) # Remove to re-add at front
-        self._known_ips.appendleft(ip) # Add to front (newest)
+            self._known_ips.remove(ip)
+        self._known_ips.appendleft(ip)
 
     async def async_config_entry_first_refresh(self):
-        """Custom first refresh to resolve IP initially."""
         if not self._is_static_ip:
-            _LOGGER.debug(f"Setup: Resolving hostname '{self.host}' for the first time...")
+            _LOGGER.info(f"Setup: Resolving hostname '{self.host}'...")
             initial_ip = await self._resolve_host()
             self._cached_ip = initial_ip
             self._add_to_history(initial_ip)
@@ -81,113 +77,81 @@ class TSkyltCoordinator(DataUpdateCoordinator):
         await super().async_config_entry_first_refresh()
 
     async def _async_update_data(self):
-        """Fetch data from the device."""
         async with self._lock:
             return await self._execute_robust_request(param=None)
 
     async def send_command(self, parameter):
-        """Send command using the same robust logic."""
         async with self._lock:
-            # We ignore the return value for commands
             await self._execute_robust_request(param=parameter)
 
     async def _execute_robust_request(self, param=None):
-        """
-        Executes a request using the 'Defense in Depth' strategy.
-        Phase 1: Gentle Retry (3x on current IP)
-        Phase 2: History Check
-        Phase 3: DNS Resolution
-        Phase 4: Final Attempt
-        """
         request_type = "Command" if param else "Status Update"
-        target_url_suffix = f"/{param}" if param else "/"
         
-        # --- PHASE 1: Gentle Retry on Current IP ---
-        # We try the current cached IP multiple times with a cooldown.
-        # This handles short WiFi dropouts or device busy states.
+        # --- PHASE 1: Gentle Retry ---
         for attempt in range(1, RETRY_ATTEMPTS + 1):
             try:
-                # Log only on retries to reduce noise on happy path
-                if attempt > 1:
-                    _LOGGER.info(f"[{request_type}] Phase 1: Retry attempt {attempt}/{RETRY_ATTEMPTS} on {self._cached_ip}...")
-                
+                # Log detailed error context
                 result = await self._perform_request(self._cached_ip, timeout=TIMEOUT_FULL, param=param)
-                
-                # If we succeeded after a retry, log it
-                if attempt > 1:
-                    _LOGGER.info(f"[{request_type}] Recovered in Phase 1 (Attempt {attempt})!")
+                if attempt > 1: 
+                     _LOGGER.info(f"[{request_type}] RECOVERED in Phase 1 (Attempt {attempt}) on {self._cached_ip}!")
                 return result
-
             except Exception as err:
-                _LOGGER.warning(f"[{request_type}] Phase 1: Attempt {attempt}/{RETRY_ATTEMPTS} failed on {self._cached_ip}. Error: {err}")
+                err_msg = str(err) or "Timeout/Unreachable"
+                _LOGGER.warning(f"[{request_type}] Phase 1: Attempt {attempt}/{RETRY_ATTEMPTS} failed on {self._cached_ip}. Error: {err_msg}")
                 
-                # If this was the last attempt, we move to Phase 2
                 if attempt < RETRY_ATTEMPTS:
-                    _LOGGER.debug(f"[{request_type}] Waiting {RETRY_DELAY}s before retry...")
                     await asyncio.sleep(RETRY_DELAY)
 
-        # If we are here, Phase 1 failed completely.
         if self._is_static_ip:
-             raise UpdateFailed(f"Static IP {self._cached_ip} is unreachable after {RETRY_ATTEMPTS} attempts.")
+             raise UpdateFailed(f"Static IP {self._cached_ip} is unreachable.")
 
         # --- PHASE 2: History Fallback ---
-        _LOGGER.info(f"[{request_type}] Entering Phase 2: Checking IP History...")
+        history_list = list(self._known_ips)
+        _LOGGER.warning(f"[{request_type}] Entering Phase 2. Checking History: {history_list}")
         
-        # Iterate over a copy of known IPs
-        for fallback_ip in list(self._known_ips):
-            if fallback_ip == self._cached_ip:
-                continue # Skip the one we just tried 3 times
+        for fallback_ip in history_list:
+            if fallback_ip == self._cached_ip: 
+                continue # Skip the one we just tried
             
-            _LOGGER.debug(f"[{request_type}] Phase 2: Probing history IP {fallback_ip}...")
+            _LOGGER.warning(f"[{request_type}] Phase 2: Probing history IP {fallback_ip}...")
             try:
-                # Use short timeout for probing
                 result = await self._perform_request(fallback_ip, timeout=TIMEOUT_PROBE, param=param)
-                
-                _LOGGER.info(f"[{request_type}] Phase 2 Success! Device found at known IP {fallback_ip}. Updating Cache.")
+                _LOGGER.warning(f"[{request_type}] Phase 2 SUCCESS! Device found at {fallback_ip}. Switching IP.")
                 self._cached_ip = fallback_ip
                 self._add_to_history(fallback_ip)
                 return result
-            except Exception:
-                pass # Silent fail in probe loop
+            except Exception as hist_err: 
+                _LOGGER.warning(f"[{request_type}] Phase 2: Probe failed on {fallback_ip}.")
 
         # --- PHASE 3: DNS Resolution ---
-        _LOGGER.info(f"[{request_type}] Entering Phase 3: History exhausted. Resolving Hostname '{self.host}'...")
+        _LOGGER.warning(f"[{request_type}] Entering Phase 3: History exhausted. Resolving DNS for '{self.host}'...")
         try:
             new_ip = await self._resolve_host()
-            _LOGGER.info(f"[{request_type}] Phase 3: DNS resolved to {new_ip}.")
+            _LOGGER.warning(f"[{request_type}] Phase 3 Result: DNS returned {new_ip}")
         except Exception as dns_err:
-            _LOGGER.error(f"[{request_type}] Phase 3: DNS failed: {dns_err}")
-            raise UpdateFailed(f"All connection phases failed. DNS Error: {dns_err}")
+            raise UpdateFailed(f"DNS failed: {dns_err}")
 
         # --- PHASE 4: Final Attempt ---
-        _LOGGER.info(f"[{request_type}] Entering Phase 4: Final attempt with resolved IP {new_ip}...")
-        
+        _LOGGER.warning(f"[{request_type}] Entering Phase 4: Final try on {new_ip} with full timeout...")
         try:
             result = await self._perform_request(new_ip, timeout=TIMEOUT_FULL, param=param)
-            
-            _LOGGER.info(f"[{request_type}] Phase 4 Success! Connection established on {new_ip}.")
+            _LOGGER.info(f"[{request_type}] Phase 4 SUCCESS! Connection established on {new_ip}")
             self._cached_ip = new_ip
             self._add_to_history(new_ip)
             return result
         except Exception as final_err:
-            _LOGGER.error(f"[{request_type}] Phase 4 Failed. Device is truly unavailable. Last Error: {final_err}")
-            raise UpdateFailed(f"Device unavailable after Phase 4. Last IP tried: {new_ip}")
-
+            raise UpdateFailed(f"Device unavailable after Phase 4. Last IP tried: {new_ip}. Error: {final_err}")
 
     async def _perform_request(self, target_ip, timeout=20, param=None):
-        """Helper to execute the HTTP request."""
         url = f"http://{target_ip}/"
-        if param:
-             url = f"http://{target_ip}/{param}"
+        if param: url = f"http://{target_ip}/{param}"
 
         async with aiohttp.ClientSession() as session:
             with async_timeout.timeout(timeout):
                 async with session.get(url, headers={"Connection": "close", "Host": self.host}) as response:
-                    # Only parse HTML if we are fetching data (param is None)
                     if param is None:
                         html = await response.text()
                         return self.parse_html(html)
-                    # For commands, we just ensure the request was sent (status check could be added)
                     if response.status >= 400:
                         raise Exception(f"HTTP Error {response.status}")
                     return None
@@ -220,12 +184,17 @@ class TSkyltCoordinator(DataUpdateCoordinator):
         if update_btn and not update_btn.has_attr('disabled'):
             data['update_available'] = True
 
-        # --- Operator ---
-        dropbtn = soup.find('button', class_='dropbtn')
-        if dropbtn:
-            raw_text = dropbtn.get_text().strip()
-            clean_op = re.sub(r'^[^a-zA-Z0-9]+', '', raw_text).strip()
-            data['operator_display'] = clean_op
+        # --- Operator Parsing ---
+        # Look for label for="operator" and find the button inside
+        op_label = soup.find('label', {'for': 'operator'})
+        data['operator'] = "be" # Default
+        if op_label:
+            btn = op_label.find_next('button', class_='dropbtn')
+            if btn:
+                # Text is like "▼ BE"
+                raw_text = btn.get_text().strip()
+                clean_op = re.sub(r'[^a-zA-Z]+', '', raw_text).lower()
+                data['operator'] = clean_op
 
         # --- Switches ---
         data['onoff'] = is_checked('onoff')
@@ -257,14 +226,25 @@ class TSkyltCoordinator(DataUpdateCoordinator):
             opt = scroll_sel.find('option', selected=True)
             if opt: data['scroll'] = opt['value']
 
-        data['maxdest'] = get_value('maxdest', '5')
+        # Parsing Max Departures: Try SELECT first (correct per HTML), fallback to INPUT
+        data['maxdest'] = '5'
+        max_sel = soup.find('select', {'id': 'maxdest'})
+        if max_sel:
+             opt = max_sel.find('option', selected=True)
+             if opt: data['maxdest'] = opt['value']
+        else:
+             data['maxdest'] = get_value('maxdest', '5')
         
-        data['offset'] = get_value('offset', '0') 
+        # Parsing Offset: Try SELECT first
+        data['offset'] = '0'
         off_sel = soup.find('select', {'id': 'offset'})
         if off_sel:
             opt = off_sel.find('option', selected=True)
             if opt: data['offset'] = opt['value']
+        else:
+            data['offset'] = get_value('offset', '0')
 
+        # Parsing hidden values or text inputs
         data['power'] = get_value('power', '20')
         data['line_length'] = get_value('line_length', '3')
         data['no_more_departures'] = get_value('no_more_departures', '')

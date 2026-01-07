@@ -13,21 +13,37 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     coordinator = hass.data[DOMAIN][entry.entry_id]
 
     entities = [
-        # View Settings
-        # Scroll Speed with clean labels (Caption -> Value)
+        # --- STATION CATEGORY ---
+        # 1. Active Config (Station 1 / 2)
+        TSkyltSelect(coordinator, "screen", "Station: Active Config", "mdi:monitor-dashboard",
+                     {"Station 1": "1", "Station 2": "2"}),
+
+        # 2. Country (Data Provider)
+        TSkyltSelect(coordinator, "country", "Station: Country", "mdi:flag",
+                     {"Sweden (SE)": "se", "Germany (DE)": "de", "Netherlands (NL)": "nl", 
+                      "Belgium (BE)": "be", "Switzerland (CH)": "ch", "Norway (NO)": "no",
+                      "Denmark (DK)": "dk", "Finland (FI)": "fi", "Croatia (CR)": "cr"}),
+
+        # 3. Operator
+        TSkyltSelect(coordinator, "operator", "Station: Operator", "mdi:train-car",
+                     {"Berlin-Brandenburg (VBB)": "be", "Deutsche Bahn (DB)": "db", "Rhein-Ruhr (VRR)": "vrr"}),
+
+        # Existing
+        TSkyltSelect(coordinator, "maxdest", "Station: Max Departures", "mdi:format-list-numbered", 
+                     [str(i) for i in range(1, 9)]),
+        TSkyltSelect(coordinator, "offset", "Station: Offset / Hide Within", "mdi:clock-start", 
+                     [str(i) for i in range(31)]),
+
+        # --- DISPLAY CATEGORY ---
+        # 4. LED Tone (Color)
+        TSkyltSelect(coordinator, "color", "Display: LED Tone", "mdi:palette",
+                     {"Orange (0)": "0", "Yellow (1)": "1", "White (2)": "2"}),
+
+        # --- VIEW CATEGORY ---
         TSkyltSelect(coordinator, "scroll", "View: Scroll Speed", "mdi:speedometer", 
                      {"Normal": "0", "Low": "1"}),
-        
-        # Max Departures (Dropdown 1-8)
-        TSkyltSelect(coordinator, "maxdest", "Station: Max Departures", "mdi:format-list-numbered", 
-                     [str(i) for i in range(1, 9)]), # 1 to 8
 
-        # Offset (Dropdown 0-30 minutes, full range)
-        TSkyltSelect(coordinator, "offset", "Station: Offset / Hide Within", "mdi:clock-start", 
-                     [str(i) for i in range(31)]), # Generates 0, 1, 2 ... 30
-        
-        # Display Hardware Settings
-        # Width moved to CONFIG category
+        # --- SYSTEM / CONFIG ---
         TSkyltSelect(coordinator, "width", "Display: Width", "mdi:arrow-expand-horizontal", 
                      ["XS", "X", "XL"], EntityCategory.CONFIG),
     ]
@@ -70,15 +86,15 @@ class TSkyltSelect(CoordinatorEntity, SelectEntity):
     @property
     def current_option(self):
         """Return the current selected option key."""
-        # Value from device (e.g., "0")
+        # Value from device (e.g., "1" or "be")
         device_val = self.coordinator.data.get(self._key, "")
         
         # Find matching label key for this value
         for label, val in self._options_map.items():
-            if val == str(device_val):
+            if str(val) == str(device_val):
                 return label
         
-        # Fallback
+        # Fallback if unknown or initial load (default to first option)
         return self._attr_options[0]
 
     async def async_select_option(self, option: str) -> None:
