@@ -19,8 +19,8 @@ _LOGGER = logging.getLogger(__name__)
 MAX_HISTORY_IPS = 5     # Maximum number of IPs to remember
 TIMEOUT_FULL = 20       # Seconds for standard data fetching
 TIMEOUT_PROBE = 4       # Seconds for fast connectivity checks
-RETRY_ATTEMPTS = 3      # Attempts on current IP before fallback
 RETRY_DELAY = 2         # Seconds between retries
+POLLING_INTERVAL = 60   # Seconds for standard status polling
 
 class TSkyltCoordinator(DataUpdateCoordinator):
     """Class to manage fetching T-Skylt data."""
@@ -47,7 +47,7 @@ class TSkyltCoordinator(DataUpdateCoordinator):
             hass,
             _LOGGER,
             name=DOMAIN,
-            update_interval=timedelta(seconds=60),
+            update_interval=timedelta(seconds=POLLING_INTERVAL),
         )
 
     def _is_valid_ip(self, host_str: str) -> bool:
@@ -77,30 +77,53 @@ class TSkyltCoordinator(DataUpdateCoordinator):
         await super().async_config_entry_first_refresh()
 
     async def _async_update_data(self):
+        """Standard Polling: Uses robust retry logic (3 attempts)."""
         async with self._lock:
-            return await self._execute_robust_request(param=None)
+            return await self._execute_robust_request(param=None, max_retries=3)
 
     async def send_command(self, parameter):
+        """Command Logic: Fire & Forget (0 retries) to prevent queue jams."""
         async with self._lock:
-            await self._execute_robust_request(param=parameter)
+            await self._execute_robust_request(param=parameter, max_retries=0)
 
-    async def _execute_robust_request(self, param=None):
+    async def _execute_robust_request(self, param=None, max_retries=3):
+        """
+        Executes a request with configurable robustness.
+        
+        Args:
+            param: The command parameter (e.g., '?newstation=...'). None for status update.
+            max_retries: Number of retries on current IP (0 for commands, 3 for polling).
+        """
         request_type = "Command" if param else "Status Update"
         
-        # --- PHASE 1: Gentle Retry ---
-        for attempt in range(1, RETRY_ATTEMPTS + 1):
+        # --- PHASE 1: Try Current IP (with optional Retries) ---
+        # Ensure we run at least once (since range(1, 1) is empty)
+        attempts_to_run = max(1, max_retries + 1) if max_retries > 0 else 1
+        
+        for attempt in range(1, attempts_to_run + 1):
             try:
-                # Log detailed error context
                 result = await self._perform_request(self._cached_ip, timeout=TIMEOUT_FULL, param=param)
                 if attempt > 1: 
                      _LOGGER.info(f"[{request_type}] RECOVERED in Phase 1 (Attempt {attempt}) on {self._cached_ip}!")
                 return result
             except Exception as err:
                 err_msg = str(err) or "Timeout/Unreachable"
-                _LOGGER.warning(f"[{request_type}] Phase 1: Attempt {attempt}/{RETRY_ATTEMPTS} failed on {self._cached_ip}. Error: {err_msg}")
                 
-                if attempt < RETRY_ATTEMPTS:
+                # Check if this was the last attempt
+                if attempt >= attempts_to_run:
+                    if max_retries == 0:
+                        # Soft fail for commands to avoid blocking
+                        _LOGGER.warning(f"[{request_type}] Dropped command to avoid queueing. Device busy/unreachable.")
+                        return None 
+                    else:
+                        _LOGGER.warning(f"[{request_type}] Phase 1: Final attempt {attempt} failed on {self._cached_ip}. Error: {err_msg}")
+                else:
+                    _LOGGER.warning(f"[{request_type}] Phase 1: Attempt {attempt} failed. Retrying in {RETRY_DELAY}s...")
                     await asyncio.sleep(RETRY_DELAY)
+
+        # If Phase 1 failed and we are in Command mode, stop here.
+        if max_retries == 0:
+            return None
 
         if self._is_static_ip:
              raise UpdateFailed(f"Static IP {self._cached_ip} is unreachable.")
@@ -110,18 +133,15 @@ class TSkyltCoordinator(DataUpdateCoordinator):
         _LOGGER.warning(f"[{request_type}] Entering Phase 2. Checking History: {history_list}")
         
         for fallback_ip in history_list:
-            if fallback_ip == self._cached_ip: 
-                continue # Skip the one we just tried
+            if fallback_ip == self._cached_ip: continue
             
-            _LOGGER.warning(f"[{request_type}] Phase 2: Probing history IP {fallback_ip}...")
             try:
                 result = await self._perform_request(fallback_ip, timeout=TIMEOUT_PROBE, param=param)
                 _LOGGER.warning(f"[{request_type}] Phase 2 SUCCESS! Device found at {fallback_ip}. Switching IP.")
                 self._cached_ip = fallback_ip
                 self._add_to_history(fallback_ip)
                 return result
-            except Exception as hist_err: 
-                _LOGGER.warning(f"[{request_type}] Phase 2: Probe failed on {fallback_ip}.")
+            except Exception: pass
 
         # --- PHASE 3: DNS Resolution ---
         _LOGGER.warning(f"[{request_type}] Entering Phase 3: History exhausted. Resolving DNS for '{self.host}'...")
@@ -149,12 +169,17 @@ class TSkyltCoordinator(DataUpdateCoordinator):
         async with aiohttp.ClientSession() as session:
             with async_timeout.timeout(timeout):
                 async with session.get(url, headers={"Connection": "close", "Host": self.host}) as response:
-                    if param is None:
-                        html = await response.text()
-                        return self.parse_html(html)
+                    # Commands: Just return True, do not wait for body or parsing
+                    if param is not None:
+                        if response.status >= 400:
+                            raise Exception(f"Command Error {response.status}")
+                        return True
+
+                    # Status Update: Parse HTML
+                    html = await response.text()
                     if response.status >= 400:
                         raise Exception(f"HTTP Error {response.status}")
-                    return None
+                    return self.parse_html(html)
 
     def parse_html(self, html):
         """Parse HTML content to extract state."""
