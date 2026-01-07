@@ -15,10 +15,12 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-# Configuration constants
+# --- Configuration Constants ---
 MAX_HISTORY_IPS = 5     # Maximum number of IPs to remember
 TIMEOUT_FULL = 20       # Seconds for standard data fetching
 TIMEOUT_PROBE = 4       # Seconds for fast connectivity checks (history probing)
+RETRY_ATTEMPTS = 3      # Phase 1: How often to retry the current IP
+RETRY_DELAY = 2         # Phase 1: Seconds to wait between retries
 
 class TSkyltCoordinator(DataUpdateCoordinator):
     """Class to manage fetching T-Skylt data."""
@@ -36,7 +38,6 @@ class TSkyltCoordinator(DataUpdateCoordinator):
         self._cached_ip = host
         
         # HISTORY: Store successful IPs to bypass stale DNS records.
-        # Using deque with maxlen ensures the list never grows infinitely.
         if self._is_static_ip:
             self._known_ips = deque([host], maxlen=MAX_HISTORY_IPS)
         else:
@@ -72,71 +73,109 @@ class TSkyltCoordinator(DataUpdateCoordinator):
     async def async_config_entry_first_refresh(self):
         """Custom first refresh to resolve IP initially."""
         if not self._is_static_ip:
+            _LOGGER.debug(f"Setup: Resolving hostname '{self.host}' for the first time...")
             initial_ip = await self._resolve_host()
             self._cached_ip = initial_ip
             self._add_to_history(initial_ip)
-            _LOGGER.debug(f"Initial resolution: {self.host} -> {self._cached_ip}")
+            _LOGGER.info(f"Setup: Initialized with IP {self._cached_ip}")
         await super().async_config_entry_first_refresh()
 
     async def _async_update_data(self):
         """Fetch data from the device."""
         async with self._lock:
-            return await self._fetch_data_internal()
+            return await self._execute_robust_request(param=None)
 
-    async def _fetch_data_internal(self):
-        """Fetch data using History-Fallback Logic."""
+    async def send_command(self, parameter):
+        """Send command using the same robust logic."""
+        async with self._lock:
+            # We ignore the return value for commands
+            await self._execute_robust_request(param=parameter)
+
+    async def _execute_robust_request(self, param=None):
+        """
+        Executes a request using the 'Defense in Depth' strategy.
+        Phase 1: Gentle Retry (3x on current IP)
+        Phase 2: History Check
+        Phase 3: DNS Resolution
+        Phase 4: Final Attempt
+        """
+        request_type = "Command" if param else "Status Update"
+        target_url_suffix = f"/{param}" if param else "/"
         
-        # 1. Try current cached IP (Full Timeout)
-        try:
-            return await self._perform_request(self._cached_ip, timeout=TIMEOUT_FULL)
-        except Exception:
-            # If a static IP fails, there is no fallback
-            if self._is_static_ip:
-                raise UpdateFailed(f"Connection failed to static IP {self._cached_ip}")
-
-            _LOGGER.warning(f"Connection to cached IP {self._cached_ip} failed. Probing history...")
-
-            # 2. HISTORY FALLBACK: Try other known IPs (Fast Timeout)
-            # Iterate over a list copy to avoid modification issues
-            for fallback_ip in list(self._known_ips):
-                if fallback_ip == self._cached_ip:
-                    continue # Skip the one we just tried
-                
-                _LOGGER.debug(f"Probing fallback IP: {fallback_ip}...")
-                try:
-                    # Short timeout for probing!
-                    data = await self._perform_request(fallback_ip, timeout=TIMEOUT_PROBE)
-                    
-                    # Success! Update current cache & history order
-                    _LOGGER.info(f"Fallback successful! Switching active IP to {fallback_ip}")
-                    self._cached_ip = fallback_ip
-                    self._add_to_history(fallback_ip)
-                    return data
-                except Exception:
-                    continue # This IP is also dead, try next
-
-            # 3. DNS RESOLUTION (Last Resort)
-            _LOGGER.info(f"History failed. Re-resolving hostname '{self.host}'...")
+        # --- PHASE 1: Gentle Retry on Current IP ---
+        # We try the current cached IP multiple times with a cooldown.
+        # This handles short WiFi dropouts or device busy states.
+        for attempt in range(1, RETRY_ATTEMPTS + 1):
             try:
-                new_ip = await self._resolve_host()
+                # Log only on retries to reduce noise on happy path
+                if attempt > 1:
+                    _LOGGER.info(f"[{request_type}] Phase 1: Retry attempt {attempt}/{RETRY_ATTEMPTS} on {self._cached_ip}...")
                 
-                # Prevent trying the same broken IP again if DNS is stale and we just probed it
-                if new_ip == self._cached_ip:
-                     raise UpdateFailed(f"DNS returned same stale IP {new_ip} which is unreachable.")
+                result = await self._perform_request(self._cached_ip, timeout=TIMEOUT_FULL, param=param)
                 
-                _LOGGER.info(f"DNS resolved new IP: {new_ip}. Trying...")
-                data = await self._perform_request(new_ip, timeout=TIMEOUT_FULL)
-                
-                # Success!
-                self._cached_ip = new_ip
-                self._add_to_history(new_ip)
-                return data
+                # If we succeeded after a retry, log it
+                if attempt > 1:
+                    _LOGGER.info(f"[{request_type}] Recovered in Phase 1 (Attempt {attempt})!")
+                return result
 
-            except Exception as final_err:
-                raise UpdateFailed(f"All connection attempts failed. Last error: {final_err}")
+            except Exception as err:
+                _LOGGER.warning(f"[{request_type}] Phase 1: Attempt {attempt}/{RETRY_ATTEMPTS} failed on {self._cached_ip}. Error: {err}")
+                
+                # If this was the last attempt, we move to Phase 2
+                if attempt < RETRY_ATTEMPTS:
+                    _LOGGER.debug(f"[{request_type}] Waiting {RETRY_DELAY}s before retry...")
+                    await asyncio.sleep(RETRY_DELAY)
+
+        # If we are here, Phase 1 failed completely.
+        if self._is_static_ip:
+             raise UpdateFailed(f"Static IP {self._cached_ip} is unreachable after {RETRY_ATTEMPTS} attempts.")
+
+        # --- PHASE 2: History Fallback ---
+        _LOGGER.info(f"[{request_type}] Entering Phase 2: Checking IP History...")
+        
+        # Iterate over a copy of known IPs
+        for fallback_ip in list(self._known_ips):
+            if fallback_ip == self._cached_ip:
+                continue # Skip the one we just tried 3 times
+            
+            _LOGGER.debug(f"[{request_type}] Phase 2: Probing history IP {fallback_ip}...")
+            try:
+                # Use short timeout for probing
+                result = await self._perform_request(fallback_ip, timeout=TIMEOUT_PROBE, param=param)
+                
+                _LOGGER.info(f"[{request_type}] Phase 2 Success! Device found at known IP {fallback_ip}. Updating Cache.")
+                self._cached_ip = fallback_ip
+                self._add_to_history(fallback_ip)
+                return result
+            except Exception:
+                pass # Silent fail in probe loop
+
+        # --- PHASE 3: DNS Resolution ---
+        _LOGGER.info(f"[{request_type}] Entering Phase 3: History exhausted. Resolving Hostname '{self.host}'...")
+        try:
+            new_ip = await self._resolve_host()
+            _LOGGER.info(f"[{request_type}] Phase 3: DNS resolved to {new_ip}.")
+        except Exception as dns_err:
+            _LOGGER.error(f"[{request_type}] Phase 3: DNS failed: {dns_err}")
+            raise UpdateFailed(f"All connection phases failed. DNS Error: {dns_err}")
+
+        # --- PHASE 4: Final Attempt ---
+        _LOGGER.info(f"[{request_type}] Entering Phase 4: Final attempt with resolved IP {new_ip}...")
+        
+        try:
+            result = await self._perform_request(new_ip, timeout=TIMEOUT_FULL, param=param)
+            
+            _LOGGER.info(f"[{request_type}] Phase 4 Success! Connection established on {new_ip}.")
+            self._cached_ip = new_ip
+            self._add_to_history(new_ip)
+            return result
+        except Exception as final_err:
+            _LOGGER.error(f"[{request_type}] Phase 4 Failed. Device is truly unavailable. Last Error: {final_err}")
+            raise UpdateFailed(f"Device unavailable after Phase 4. Last IP tried: {new_ip}")
+
 
     async def _perform_request(self, target_ip, timeout=20, param=None):
-        """Helper to execute the request with variable timeout."""
+        """Helper to execute the HTTP request."""
         url = f"http://{target_ip}/"
         if param:
              url = f"http://{target_ip}/{param}"
@@ -148,6 +187,9 @@ class TSkyltCoordinator(DataUpdateCoordinator):
                     if param is None:
                         html = await response.text()
                         return self.parse_html(html)
+                    # For commands, we just ensure the request was sent (status check could be added)
+                    if response.status >= 400:
+                        raise Exception(f"HTTP Error {response.status}")
                     return None
 
     def parse_html(self, html):
@@ -251,28 +293,3 @@ class TSkyltCoordinator(DataUpdateCoordinator):
                 data['uptime'] = int(match.group(1)) if match else None
 
         return data
-
-    async def send_command(self, parameter):
-        """Send command with smart fallback."""
-        async with self._lock:
-            try:
-                # 1. Try Cached IP (Full Timeout)
-                await self._perform_request(self._cached_ip, timeout=TIMEOUT_FULL, param=parameter)
-            
-            except Exception:
-                # If fail, try known IPs (History) - Fast Timeout
-                if not self._is_static_ip:
-                     for fallback_ip in list(self._known_ips):
-                         if fallback_ip == self._cached_ip: continue
-                         try:
-                             # Probe with command
-                             await self._perform_request(fallback_ip, timeout=TIMEOUT_PROBE, param=parameter)
-                             
-                             # Success! Switch cache
-                             _LOGGER.info(f"Command fallback successful! Active IP is now {fallback_ip}")
-                             self._cached_ip = fallback_ip
-                             self._add_to_history(fallback_ip)
-                             return
-                         except:
-                             pass
-                _LOGGER.error(f"Failed to send command {parameter}")
