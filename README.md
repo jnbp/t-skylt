@@ -279,45 +279,105 @@ mode: single
 
 ## 🧠 Technical Details
 
-This integration is designed to be robust against network latency and the hardware limitations of the T-Skylt board. Below is an overview of how it works under the hood.
-
 <details>
+
+This integration includes sophisticated logic to handle unstable networks (e.g., WiFi Repeaters) and the specific limitations of the ESP32 hardware.
 
 ### ⚙️ How it works: Web Scraping & Polling
 
 The T-Skylt board does not provide a formal JSON API. Instead, this integration acts like a web browser:
 
 1. **Fetching:** It performs an HTTP GET request to the device's root URL (`/`) to retrieve the raw HTML.
-2. **Parsing:** It uses `BeautifulSoup` to parse the HTML structure. The state of the device (e.g., is the light on? what is the brightness?) is determined by inspecting HTML attributes like `checked` on checkboxes or `value` in input fields.
-3. **Controlling:** To change settings, the integration sends HTTP requests with specific query parameters (e.g., `/?brightness=2`), mimicking the behavior of clicking buttons on the actual web interface.
+2. **Parsing:** It uses `BeautifulSoup` to parse the HTML structure.
+3. **Controlling:** To change settings, the integration sends HTTP requests with query parameters (e.g., `/?brightness=2`).
 
-### 🛡️ Concurrency Control (The "Queue")
+### 🛡️ Robust Connectivity Strategy ("Defense in Depth")
 
-The device is based on a microcontroller (likely ESP-based) with a single-threaded web server. It cannot handle multiple HTTP requests simultaneously. If Home Assistant tries to fetch the status (polling) at the exact same moment an automation sends a command, the device often drops the connection or freezes.
+A major challenge with IoT devices in home networks is stability. WiFi signals fluctuate, Repeaters change IP addresses dynamically, and microcontrollers can be temporarily busy. To prevent the device from flickering to "Unavailable" in Home Assistant, this integration implements a **4-Phase Connection Logic**.
 
-* **Implementation:** An `asyncio.Lock` is used within the DataUpdateCoordinator.
-* **Effect:** Commands and Status Updates are strictly queued. If a status update is running, any button press waits until the update is finished (and vice versa). This ensures sequential processing and prevents overloading the chip.
+We don't just give up on the first error. We fight to keep the connection alive.
 
-### 📡 Smart IP Caching & History (Repeater Logic)
+#### The 4 Phases of Connection
 
-Many users operate the board behind a WiFi Repeater, which often results in the board receiving a new IP address dynamically while the hostname (`.local`) remains the same.
-To solve "Unavailable" errors caused by stale DNS caches in the operating system:
+1. **Phase 1: Gentle Retry (Anti-Flicker)**
+* We try the last known IP address up to **3 times**.
+* Between attempts, we wait **2 seconds**.
+* *Why?* This catches 90% of issues where the device is just busy rebooting or the WiFi has a short hiccup.
 
-* **IP History:** The integration remembers the last 5 IP addresses that successfully connected.
-* **Smart Probing:** If the current IP fails, the integration immediately probes the history list with a very short timeout. This bypasses the OS DNS entirely and often reconnects within milliseconds if the board just switched back to a known IP.
-* **DNS Fallback:** Only if all known IPs fail, a fresh DNS lookup is performed.
 
-### 🔄 Smart Retry Logic
+2. **Phase 2: History Check (Repeater Logic)**
+* If Phase 1 fails, we assume the IP might have changed (e.g., Repeater switch).
+* We check an internal **History List** of the last 5 known working IPs.
+* We probe them with a very fast timeout (4s). If one answers, we switch immediately without waiting for DNS.
 
-Transient network errors are common with IoT devices. To avoid false alarms in the dashboard:
 
-* **Logic:** If a status update fails, the integration pauses for **2 seconds** and tries a **second time**.
-* **Result:** The device is only marked "Unavailable" if it genuinely fails to respond twice in a row.
+3. **Phase 3: DNS Resolution (Last Resort)**
+* If history is empty/dead, we ask the network (mDNS) for the current IP of the hostname.
 
-### 💓 Heartbeat & Socket Management
 
-* **Polling Interval:** Data is refreshed every **60 seconds** to minimize load.
-* **Cleanup:** Every request sends `Connection: close` headers to force the device to free up memory sockets immediately after a transaction, preventing memory leaks on the hardware.
+4. **Phase 4: Final Attempt**
+* We try the new IP from Phase 3 with a full timeout.
+
+
+
+<details>
+<summary><b>🔍 Click to view Sequence Diagram</b></summary>
+
+```mermaid
+sequenceDiagram
+    autonumber
+    box "Home Assistant" #White
+        participant HA as Coordinator
+    end
+    box "T-Skylt Device" #LightBlue
+        participant DEV as Device (ESP32)
+    end
+    box "Infrastructure" #LightGray
+        participant DNS as DNS / Router
+    end
+
+    Note over HA: <b>Scenario: Connection Lost / IP Change</b>
+
+    rect rgb(255, 240, 240)
+        Note right of HA: <b>Phase 1: Gentle Retry</b><br/>Try cached IP (e.g. .168) 3 times
+        loop 3x Attempts
+            HA->>DEV: GET / (Timeout 20s)
+            DEV--xHA: No Reply / Error
+            Note over HA: Wait 2s Cooldown...
+        end
+    end
+
+    rect rgb(240, 240, 255)
+        Note right of HA: <b>Phase 2: History Fallback</b><br/>Check other known IPs (e.g. .172)
+        loop For every IP in History
+            HA->>DEV: Probe GET / (Timeout 4s)
+            DEV--xHA: No Reply
+        end
+    end
+
+    rect rgb(240, 255, 240)
+        Note right of HA: <b>Phase 3: DNS Resolution</b>
+        HA->>DNS: Resolve "esp32-s3-zero.local"
+        DNS-->>HA: New IP: 192.168.178.172
+    end
+
+    rect rgb(255, 255, 240)
+        Note right of HA: <b>Phase 4: Final Attempt</b>
+        HA->>DEV: GET / (New IP .172)
+        DEV-->>HA: 200 OK (Success!)
+        Note over HA: Update Cache & History
+    end
+
+```
+
+</details>
+
+### 🛡️ Concurrency Control (The Queue)
+
+The ESP32 is single-threaded. To prevent crashing the web server:
+
+* **Async Locking:** An `asyncio.Lock` ensures that Home Assistant never sends two requests at the same time.
+* **Socket Cleanup:** Every request sends `Connection: close` to free up memory on the device immediately.
 
 </details>
 
