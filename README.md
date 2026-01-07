@@ -83,6 +83,7 @@ This integration exposes almost every known function of the board. Below is a co
 | :--- | :--- | :--- |
 | **Timers** | `?set_timer` | Start/End time fields for every day of the week (Monday - Sunday). |
 | **Clear Timers** | `?cleartimer` | Button to delete all active schedules. |
+| **Reboot** | `/stop` | Restarts the device. |
 | **TX Power** | `?power` | Adjust the WiFi transmit power (dBm). |
 | **E-Mail** | `?user` | Store user email address on the device. |
 | **Language** | `?language` | Set system language (English/Swedish). |
