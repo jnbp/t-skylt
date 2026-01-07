@@ -4,6 +4,7 @@ import asyncio
 import aiohttp
 import async_timeout
 import re
+import socket
 from bs4 import BeautifulSoup
 from datetime import timedelta
 
@@ -19,7 +20,7 @@ class TSkyltCoordinator(DataUpdateCoordinator):
     def __init__(self, hass: HomeAssistant, host: str):
         """Initialize the coordinator."""
         self.host = host
-        self.base_url = f"http://{host}/"
+        # Wir speichern hier nur noch das Schema, die IP holen wir dynamisch
         self.sw_version = "Unknown"
         
         # Locking to prevent race conditions
@@ -32,6 +33,21 @@ class TSkyltCoordinator(DataUpdateCoordinator):
             update_interval=timedelta(seconds=60),
         )
 
+    async def _resolve_host(self) -> str:
+        """Resolve the hostname to an IP address explicitly."""
+        # Wenn es schon eine IP ist, einfach zurückgeben
+        if re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", self.host):
+            return self.host
+            
+        try:
+            # Wir zwingen Python, den Namen jetzt frisch aufzulösen
+            # Das läuft im Executor, um den Event-Loop nicht zu blockieren
+            return await self.hass.async_add_executor_job(socket.gethostbyname, self.host)
+        except Exception as err:
+            _LOGGER.warning(f"Could not resolve host {self.host}: {err}")
+            # Fallback: Wir geben den Hostnamen zurück und hoffen, dass aiohttp es schafft
+            return self.host
+
     async def _async_update_data(self):
         """Fetch data from the device with locking and retry logic."""
         async with self._lock:
@@ -42,15 +58,25 @@ class TSkyltCoordinator(DataUpdateCoordinator):
         attempts = 2
         for attempt in range(1, attempts + 1):
             try:
-                # No shared session to ensure Connection: close
+                # SCHRITT 1: Hostnamen frisch in IP auflösen
+                current_ip = await self._resolve_host()
+                
+                # Wenn wir im Debug-Modus wären, könnte man das loggen:
+                # _LOGGER.debug(f"Connecting to {self.host} resolved as {current_ip}")
+                
+                # URL dynamisch mit der aktuellen IP bauen
+                dynamic_url = f"http://{current_ip}/"
+
+                # SCHRITT 2: Anfrage an diese IP senden
+                # Wir setzen den 'Host'-Header, falls der Webserver das prüft (meistens egal bei ESP)
                 async with aiohttp.ClientSession() as session:
-                    # High timeout for repeater latency
                     with async_timeout.timeout(40):
-                        async with session.get(self.base_url, headers={"Connection": "close"}) as response:
+                        async with session.get(dynamic_url, headers={"Connection": "close", "Host": self.host}) as response:
                             html = await response.text()
                             return self.parse_html(html)
+
             except Exception as err:
-                _LOGGER.warning(f"Attempt {attempt}/{attempts} failed fetching data from {self.host}: {err}")
+                _LOGGER.warning(f"Attempt {attempt}/{attempts} failed fetching data from {self.host} (IP: {current_ip if 'current_ip' in locals() else 'unknown'}): {err}")
                 if attempt == attempts:
                     raise UpdateFailed(f"Error communicating with {self.host}: {err}")
                 await asyncio.sleep(2)
@@ -133,9 +159,6 @@ class TSkyltCoordinator(DataUpdateCoordinator):
         data['no_more_departures'] = get_value('no_more_departures', '')
         data['mins'] = get_value('mins', '')
         data['user'] = get_value('user', '')
-        
-        # REMOVED: Parsing of 'newstation'. The device does not report the active ID.
-        # We handle this state locally in text.py now.
 
         # --- Timers ---
         days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
@@ -161,13 +184,16 @@ class TSkyltCoordinator(DataUpdateCoordinator):
         return data
 
     async def send_command(self, parameter):
-        """Send command with locking to prevent collisions with status updates."""
-        url = f"{self.base_url}{parameter}"
+        """Send command with locking and explicit DNS resolution."""
         
         async with self._lock:
             try:
+                # Auch hier: Erst IP auflösen!
+                current_ip = await self._resolve_host()
+                dynamic_url = f"http://{current_ip}/{parameter}"
+                
                 async with aiohttp.ClientSession() as session:
                      with async_timeout.timeout(20):
-                        await session.get(url, headers={"Connection": "close"})
+                        await session.get(dynamic_url, headers={"Connection": "close", "Host": self.host})
             except Exception as e:
-                _LOGGER.error(f"Error sending command {parameter}: {e}")
+                _LOGGER.error(f"Error sending command {parameter} to {self.host}: {e}")
