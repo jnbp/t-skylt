@@ -20,12 +20,16 @@ class TSkyltCoordinator(DataUpdateCoordinator):
     def __init__(self, hass: HomeAssistant, host: str):
         """Initialize the coordinator."""
         self.host = host
-        # Wir speichern hier nur noch das Schema, die IP holen wir dynamisch
         self.sw_version = "Unknown"
-        
-        # Locking to prevent race conditions
         self._lock = asyncio.Lock()
+
+        # LOGIC: Check if input is a static IP or a hostname
+        self._is_static_ip = self._is_valid_ip(host)
         
+        # We store the IP we want to talk to here.
+        # If static, it's the host. If hostname, it's the resolved IP.
+        self._cached_ip = host 
+
         super().__init__(
             hass,
             _LOGGER,
@@ -33,53 +37,73 @@ class TSkyltCoordinator(DataUpdateCoordinator):
             update_interval=timedelta(seconds=60),
         )
 
+    def _is_valid_ip(self, host_str: str) -> bool:
+        """Check if the string is a valid IP address."""
+        return bool(re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", host_str))
+
     async def _resolve_host(self) -> str:
-        """Resolve the hostname to an IP address explicitly."""
-        # Wenn es schon eine IP ist, einfach zurückgeben
-        if re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", self.host):
+        """Resolve hostname to IP. Only called on init or error."""
+        if self._is_static_ip:
             return self.host
-            
+        
         try:
-            # Wir zwingen Python, den Namen jetzt frisch aufzulösen
-            # Das läuft im Executor, um den Event-Loop nicht zu blockieren
             return await self.hass.async_add_executor_job(socket.gethostbyname, self.host)
         except Exception as err:
-            _LOGGER.warning(f"Could not resolve host {self.host}: {err}")
-            # Fallback: Wir geben den Hostnamen zurück und hoffen, dass aiohttp es schafft
-            return self.host
+            _LOGGER.warning(f"DNS Resolution failed for {self.host}: {err}")
+            return self.host # Fallback to hostname if DNS fails
+
+    async def async_config_entry_first_refresh(self):
+        """Custom first refresh to resolve IP initially."""
+        if not self._is_static_ip:
+            self._cached_ip = await self._resolve_host()
+            _LOGGER.debug(f"Initial resolution: {self.host} -> {self._cached_ip}")
+        await super().async_config_entry_first_refresh()
 
     async def _async_update_data(self):
-        """Fetch data from the device with locking and retry logic."""
+        """Fetch data from the device."""
         async with self._lock:
             return await self._fetch_data_internal()
 
     async def _fetch_data_internal(self):
-        """Internal helper to perform the actual fetch with retries."""
-        attempts = 2
-        for attempt in range(1, attempts + 1):
+        """Smart Fetch: Try cached IP -> Fail -> Re-resolve -> Retry."""
+        
+        # Versuch 1: Mit der bekannten IP (Cached)
+        try:
+            return await self._perform_request(self._cached_ip)
+        except Exception as err:
+            # Wenn wir eine statische IP haben, ist hier Ende.
+            if self._is_static_ip:
+                raise UpdateFailed(f"Connection failed to static IP {self._cached_ip}: {err}")
+
+            # RETTUNGSSCHIRM (Smart Recovery)
+            # Verbindung fehlgeschlagen & wir nutzen Hostname -> Neu auflösen!
+            _LOGGER.warning(f"Connection to cached IP {self._cached_ip} failed. Re-resolving hostname '{self.host}'...")
+            
             try:
-                # SCHRITT 1: Hostnamen frisch in IP auflösen
-                current_ip = await self._resolve_host()
+                new_ip = await self._resolve_host()
                 
-                # Wenn wir im Debug-Modus wären, könnte man das loggen:
-                # _LOGGER.debug(f"Connecting to {self.host} resolved as {current_ip}")
+                if new_ip == self._cached_ip:
+                    # DNS hat immer noch die alte IP -> Echter Netzwerkfehler
+                    raise UpdateFailed(f"Host {self.host} still resolves to {new_ip}, but is unreachable: {err}")
                 
-                # URL dynamisch mit der aktuellen IP bauen
-                dynamic_url = f"http://{current_ip}/"
+                # Wir haben eine neue IP! Cache updaten und nochmal versuchen.
+                _LOGGER.info(f"Host moved! Updating IP cache: {self._cached_ip} -> {new_ip}")
+                self._cached_ip = new_ip
+                
+                # Versuch 2: Mit neuer IP
+                return await self._perform_request(self._cached_ip)
+                
+            except Exception as retry_err:
+                raise UpdateFailed(f"Recovery failed for {self.host}: {retry_err}")
 
-                # SCHRITT 2: Anfrage an diese IP senden
-                # Wir setzen den 'Host'-Header, falls der Webserver das prüft (meistens egal bei ESP)
-                async with aiohttp.ClientSession() as session:
-                    with async_timeout.timeout(40):
-                        async with session.get(dynamic_url, headers={"Connection": "close", "Host": self.host}) as response:
-                            html = await response.text()
-                            return self.parse_html(html)
-
-            except Exception as err:
-                _LOGGER.warning(f"Attempt {attempt}/{attempts} failed fetching data from {self.host} (IP: {current_ip if 'current_ip' in locals() else 'unknown'}): {err}")
-                if attempt == attempts:
-                    raise UpdateFailed(f"Error communicating with {self.host}: {err}")
-                await asyncio.sleep(2)
+    async def _perform_request(self, target_ip):
+        """Helper to execute the actual HTTP request."""
+        url = f"http://{target_ip}/"
+        async with aiohttp.ClientSession() as session:
+            with async_timeout.timeout(20): # 20s Timeout
+                async with session.get(url, headers={"Connection": "close", "Host": self.host}) as response:
+                    html = await response.text()
+                    return self.parse_html(html)
 
     def parse_html(self, html):
         """Parse HTML content to extract state."""
@@ -184,16 +208,32 @@ class TSkyltCoordinator(DataUpdateCoordinator):
         return data
 
     async def send_command(self, parameter):
-        """Send command with locking and explicit DNS resolution."""
-        
+        """Send command with locking and smart IP cache."""
         async with self._lock:
             try:
-                # Auch hier: Erst IP auflösen!
-                current_ip = await self._resolve_host()
-                dynamic_url = f"http://{current_ip}/{parameter}"
+                # Nutze cached IP
+                target_ip = self._cached_ip
+                url = f"http://{target_ip}/{parameter}"
                 
                 async with aiohttp.ClientSession() as session:
                      with async_timeout.timeout(20):
-                        await session.get(dynamic_url, headers={"Connection": "close", "Host": self.host})
+                        await session.get(url, headers={"Connection": "close", "Host": self.host})
+            
             except Exception as e:
-                _LOGGER.error(f"Error sending command {parameter} to {self.host}: {e}")
+                # Auch beim Senden: Wenn es fehlschlägt und wir Hostname nutzen -> Versuch neu aufzulösen
+                if not self._is_static_ip:
+                     _LOGGER.warning(f"Command failed on {self._cached_ip}, trying re-resolve...")
+                     try:
+                         new_ip = await self._resolve_host()
+                         if new_ip != self._cached_ip:
+                             self._cached_ip = new_ip
+                             # Retry mit neuer IP
+                             url = f"http://{new_ip}/{parameter}"
+                             async with aiohttp.ClientSession() as session:
+                                with async_timeout.timeout(20):
+                                    await session.get(url, headers={"Connection": "close", "Host": self.host})
+                             return # Success
+                     except:
+                         pass # Wenn Retry auch schiefgeht, loggen wir den originalen Fehler unten
+                
+                _LOGGER.error(f"Error sending command {parameter} to {self.host} (IP: {self._cached_ip}): {e}")
