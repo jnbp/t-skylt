@@ -101,14 +101,17 @@ This integration exposes almost every known function of the board. Below is a co
 
 ## 🚀 Installation
 
+### Via HACS
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=jnbp&repository=t-skylt&category=integration)
+
+Use link above or manually add this repo to HACS:
+
 1.  **HACS:** Go to HACS -> Integrations -> 3 dots (top right) -> **Custom repositories**.
 2.  **Add URL:** `https://github.com/jnbp/t-skylt` -> Category: **Integration**.
 3.  **Install:** Click "Download" on the new card.
 4.  **Restart:** Restart Home Assistant.
 5.  **Add Device:** Go to Settings -> Devices & Services -> Add Integration -> Search **"T-Skylt"**.
-6.  **Setup:** Enter the **IP Address** (e.g., `192.168.1.50`) or the **Hostname** (e.g., `esp32-s3-zero.local`) of your board.
-
-> **💡 Tip:** For maximum stability, we recommend assigning a fixed **Static IP** to the board in your router and using that instead of a hostname.
+6.  **Setup:** Try the default **Hostname** ("esp32-s3-zero.local") or enter an **IP Address** (e.g., "192.168.1.50") of your board.
 
 ---
 
