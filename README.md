@@ -44,6 +44,7 @@ This integration exposes almost every known function of the board. Below is a co
 | **Country** | `?country` | Select the data provider country (e.g., SE, DE, FI, NO, etc.). |
 | **Operator** | `?operator` | Select the specific transport service (e.g., VBB, SL, DB, SJ). |
 | **Station ID Input** | `?newstation` | Text field to input the raw Station ID (see "Infinite Stations" below). |
+| **Station Title Search** | `?search` | Text field to search for a station name. |
 | **Transport Types** | `?type` | Toggle specific transport modes: **Subway**, **Bus**, **Train**, **Tram**, **Ship**. |
 | **Max Departures** | `?maxdest` | Dropdown to limit the list to 1-8 departures. |
 | **Offset / Hide Within** | `?offset` | Dropdown to hide departures leaving in less than X minutes (0-30 min). |
