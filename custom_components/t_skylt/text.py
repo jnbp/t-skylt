@@ -1,4 +1,5 @@
 """Text platform for T-Skylt."""
+import asyncio
 import urllib.parse
 from homeassistant.components.text import TextEntity
 from homeassistant.config_entries import ConfigEntry
@@ -14,6 +15,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     entities = [
         # Station Group - Using SPECIAL class for Input
         TSkyltStationInput(coordinator, "newstation", "Station: ID Input", "mdi:map-marker"),
+        TSkyltStationSearch(coordinator, "searchstation", "Station: Title Search", "mdi:magnify"),
         
         # View Group
         TSkyltText(coordinator, "no_more_departures", "View: No Departures Text", "mdi:message-text-outline"),
@@ -100,6 +102,44 @@ class TSkyltStationInput(CoordinatorEntity, TextEntity, RestoreEntity):
         await self.coordinator.send_command(f"?{self._key}={encoded_val}")
         # Update local state
         self._attr_native_value = value
+        self.async_write_ha_state()
+
+class TSkyltStationSearch(CoordinatorEntity, TextEntity):
+    """
+    Text Entity that triggers the two-step search on the device.
+    It does not read or hold state.
+    """
+    def __init__(self, coordinator, key, name, icon):
+        super().__init__(coordinator)
+        self._key = key
+        self._name_suffix = name
+        self._icon = icon
+        self._attr_native_value = ""
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(identifiers={(DOMAIN, self.coordinator.host)}, name="T-Skylt Board", manufacturer="T-Skylt Sweden AB", model="Departure Board", sw_version=self.coordinator.sw_version)
+    @property
+    def name(self): return f"T-Skylt {self._name_suffix}"
+    @property
+    def unique_id(self): return f"{self.coordinator.host}_{self._key}"
+    @property
+    def native_value(self):
+        return self._attr_native_value
+    @property
+    def icon(self): return self._icon
+
+    async def async_set_value(self, value: str) -> None:
+        # We don't save this state, but update UI temporarily
+        self._attr_native_value = value
+        self.async_write_ha_state()
+        
+        # Fire the new advanced search command on Coordinator
+        success = await self.coordinator.send_search_command(value)
+        
+        # Clear the field a moment later so it acts like a command input
+        await asyncio.sleep(2)
+        self._attr_native_value = ""
         self.async_write_ha_state()
 
 class TSkyltTimerText(CoordinatorEntity, TextEntity):

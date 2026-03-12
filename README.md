@@ -278,6 +278,26 @@ mode: single
 </details>
 </details>
 
+### 3. Search for a new Station
+
+<details>
+
+The firmware of the board can sometimes "forget" the station after a reboot. To restore it, or simply to search for a new one without opening the board's web interface, you can search directly via Home Assistant.
+
+This integration includes a native text entity (`text.t_skylt_station_title_search`) that automatically handles the board's required two-step HTTP request sequence.
+
+You can add this to your Lovelace Dashboard to easily search for new stations (e.g., "Hauptbahnhof" or "Alexanderplatz"):
+
+```yaml
+type: entities
+title: T-Skylt Settings
+entities:
+  - entity: text.t_skylt_station_title_search
+    name: "Search Station (e.g. Hauptbahnhof)"
+```
+
+</details>
+
 ---
 
 ## 🧠 Technical Details

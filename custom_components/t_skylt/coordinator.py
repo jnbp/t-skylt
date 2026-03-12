@@ -86,6 +86,41 @@ class TSkyltCoordinator(DataUpdateCoordinator):
         async with self._lock:
             await self._execute_robust_request(param=parameter, max_retries=0)
 
+    async def send_search_command(self, station_name):
+        """Execute the two-step search (POST / then GET /search)."""
+        async with self._lock:
+            url_post = f"http://{self._cached_ip}/"
+            url_get = f"http://{self._cached_ip}/search"
+            payload = {"sstring": station_name}
+
+            try:
+                async with aiohttp.ClientSession() as session:
+                    with async_timeout.timeout(TIMEOUT_FULL):
+                        # Step 1: POST
+                        async with session.post(
+                            url_post, 
+                            data=payload,
+                            headers={"Connection": "close", "Host": self.host}
+                        ) as resp1:
+                            if resp1.status >= 400:
+                                raise Exception(f"Search POST Error {resp1.status}")
+                        
+                        # Step 2: Delay (1 second, as requested)
+                        await asyncio.sleep(1)
+                        
+                        # Step 3: GET
+                        async with session.get(
+                            url_get,
+                            headers={"Connection": "close", "Host": self.host}
+                        ) as resp2:
+                            if resp2.status >= 400:
+                                raise Exception(f"Search GET Error {resp2.status}")
+                                
+                return True
+            except Exception as err:
+                _LOGGER.error(f"Failed to execute station search: {err}")
+                return False
+
     async def _execute_robust_request(self, param=None, max_retries=3):
         """
         Executes a request with configurable robustness.
