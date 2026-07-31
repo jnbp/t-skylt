@@ -26,7 +26,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
         # 3. Operator
         TSkyltSelect(coordinator, "operator", "Station: Operator", "mdi:train-car",
-                     {"Berlin-Brandenburg (VBB)": "be", "Deutsche Bahn (DB)": "db", "Rhein-Ruhr (VRR)": "vrr"}),
+                     {"Germany (gtfs.de)": "local",
+                      "DB-trains (Deutsche Bahn)": "db_trains",
+                      "Berlin (Unofficial API)": "be",
+                      "VBB/BVG (Berlin-Brandenburg)": "vbb",
+                      "VRR (Rhein-Ruhr)": "vrr",
+                      "KVV (Karlsruhe)": "kvv",
+                      "RMV (Frankfurt)": "rmv",
+                      "HHVV (Hamburg etc.)": "hochbahn",
+                      "VRN (Rhein-Neckar)": "vrn",
+                      "VBN (Bremen-Niedersachsen)": "vbn",
+                      "VVO (Dresden)": "vvo"}),
+
 
         # Existing
         TSkyltSelect(coordinator, "maxdest", "Station: Max Departures", "mdi:format-list-numbered", 
