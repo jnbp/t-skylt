@@ -21,19 +21,40 @@ I developed this to solve my own need for better control over the board. While t
 ---
 
 ## 📋 Table of Contents
-1. [Features](#-features)
-2. [Installation](#-installation)
-3. [Automation Ideas & Recipes](#-automation-ideas--recipes)
+1. [Two Modes: Legacy and Departures Plus](#-two-modes-legacy-and-departures-plus)
+2. [Features (Legacy)](#-features-legacy)
+3. [Departures Plus](#-departures-plus)
+4. [Installation](#-installation)
+5. [Automation Ideas & Recipes](#-automation-ideas--recipes)
     - [Turn board on based on light and presence sensor](#1-turn-board-on-based-on-light-and-presence-sensor)
     - [The "Infinite Stations" Workaround](#2-the-infinite-stations-workaround-rotation)
-4. [Technical Details](#-technical-details)
-5. [Credits](#-credits)
+6. [Technical Details](#-technical-details)
+7. [Credits](#-credits)
 
 ---
 
-## 🎛 Features
+## 🔀 Two Modes: Legacy and Departures Plus
 
-This integration exposes almost every known function of the board. Below is a complete list of all controls, grouped by their category in Home Assistant.
+Since 0.3.0 the integration works with two different apps on the board. Which one is used is decided when you add the board, in the field **App on the board**.
+
+| | **Legacy** | **Departures Plus** |
+| :--- | :--- | :--- |
+| **App on the board** | The stock *Departures* app | *Departures Plus*, an alternative departures app for the MatrixBOX firmware with station rotation, line colors and a ticker |
+| **How Home Assistant talks to it** | Reads the board's web page and sends the same requests a browser would | The app's JSON API |
+| **Entities** | Almost every setting of the stock app, see [Features (Legacy)](#-features-legacy) | A small set for automations, see [Departures Plus](#-departures-plus). Everything else is set on the app's own settings page. |
+| **Ticker messages from Home Assistant** | No | Yes, as a notify entity and as actions |
+
+Good to know:
+
+* **Detect automatically** is the default and recognizes Departures Plus by its API. Departures Plus must be running on the board while you add it.
+* Boards added before 0.3.0 keep working as legacy boards without any change.
+* To switch a board from one mode to the other, remove it under *Settings -> Devices & Services* and add it again.
+
+---
+
+## 🎛 Features (Legacy)
+
+In legacy mode this integration exposes almost every known function of the stock Departures app. Below is a complete list of all controls, grouped by their category in Home Assistant.
 
 ### 🚉 Category: Station
 *Configuration regarding *what* data is shown.*
@@ -100,6 +121,56 @@ This integration exposes almost every known function of the board. Below is a co
 
 ---
 
+## ➕ Departures Plus
+
+Departures Plus rotates through any number of stations by itself and is configured on its own settings page on the board (`http://<YOUR-IP>/`). Home Assistant therefore only gets what automations need:
+
+| Entity | Description |
+| :--- | :--- |
+| **Display: Power** (switch) | Turn the display on or off. |
+| **Display: Brightness** (number) | 1 to 3. |
+| **Station: Shown** (select) | Rotate through all stations, or hold one of them. |
+| **Station: Next** (button) | Jump to the next station. |
+| **Station: Current** (sensor) | The station on the display, with mode and ticker messages as attributes. |
+| **Next Departure: (station)** (sensor) | Minutes until the next departure at each station. Line, destination, data source and the following departures are attributes. |
+| **Ticker** (notify) | Sends a text to the ticker in the board's status row. |
+| **Ticker: Message Duration** (number) | Seconds a notify message stays in the ticker. Default 60, 0 keeps it until cleared. |
+| **Ticker: Wake Display** (switch) | On by default: a ticker message turns a switched-off display on for as long as the message runs. Needs Departures Plus 0.5.0 or newer. |
+| **Ticker: Permanent Text** (text) | The text that is always in the ticker. Saved on the board. |
+| **System: Temperature / Uptime / Wi-Fi Signal / Active IP** (sensors) | Diagnostics. The first three need Departures Plus 0.5.0 or newer. |
+
+### Ticker messages
+
+The simple way is the standard notify action. The message disappears after the time set in **Ticker: Message Duration**:
+
+```yaml
+action: notify.send_message
+target:
+  entity_id: notify.t_skylt_ticker
+data:
+  message: "Door opened"
+```
+
+For full control there are two actions of the integration: `t_skylt.ticker_message` (own duration, a `message_id` to replace or clear exactly this message, `wake` to override the wake switch) and `t_skylt.clear_ticker`:
+
+```yaml
+action: t_skylt.ticker_message
+data:
+  message: "Window open"
+  duration: 0
+  message_id: window
+```
+
+```yaml
+action: t_skylt.clear_ticker
+data:
+  message_id: window
+```
+
+More details: [DEPARTURES_PLUS.md](DEPARTURES_PLUS.md)
+
+---
+
 ## 🚀 Installation
 
 ### Via HACS
@@ -113,12 +184,13 @@ Use link above or manually add this repo to HACS:
 4.  **Restart:** Restart Home Assistant.
 5.  **Add Device:** Go to Settings -> Devices & Services -> Add Integration -> Search **"T-Skylt"**.
 6.  **Setup:** Try the default **Hostname** ("esp32-s3-zero.local") or enter an **IP Address** (e.g., "192.168.1.50") of your board.
+7.  **App on the board:** Leave it on **Detect automatically**, or choose **Legacy** or **Departures Plus** yourself (see [Two Modes](#-two-modes-legacy-and-departures-plus)).
 
 ---
 
 ## 💡 Automation Ideas & Recipes
 
-Here are some ways to get the most out of your board.
+Here are some ways to get the most out of your board. The recipes below were written for legacy mode. With Departures Plus the entity names differ (e.g. `switch.t_skylt_display_power`), and recipes 2 and 3 are not needed because the app rotates and searches stations itself.
 
 ### 1. Turn board on based on light and presence sensor
 
@@ -309,11 +381,13 @@ This integration includes sophisticated logic to handle unstable networks (e.g.,
 
 ### ⚙️ How it works: Web Scraping & Polling
 
-The T-Skylt board does not provide a formal JSON API. Instead, this integration acts like a web browser:
+The stock Departures app does not provide a formal JSON API. In legacy mode this integration therefore acts like a web browser:
 
 1. **Fetching:** It performs an HTTP GET request to the device's root URL (`/`) to retrieve the raw HTML.
 2. **Parsing:** It uses `BeautifulSoup` to parse the HTML structure.
 3. **Controlling:** To change settings, the integration sends HTTP requests with query parameters (e.g., `/?brightness=2`).
+
+Departures Plus has a JSON API, so nothing is scraped in that mode: the integration polls `/api/state` every 30 seconds and sends commands to `/api/set` and `/api/message`. The connection handling described below is used in both modes.
 
 ### 🛡️ Robust Connectivity Strategy ("Defense in Depth")
 
@@ -414,7 +488,3 @@ The collaboration with the manufacturer is quite cool, and their support allowed
 
 * **Hardware Manufacturer:** [T-Skylt Sweden AB](http://t-skylt.se)
 * **Integration Maintainer:** [@jnbp](https://github.com/jnbp)
-
-```
-
-```
