@@ -1,0 +1,54 @@
+ticker_message:
+  name: Send ticker message
+  description: Shows a text in the ticker of a board running Departures Plus.
+  fields:
+    message:
+      name: Message
+      description: The text to show.
+      required: true
+      example: "Door opened"
+      selector:
+        text:
+    duration:
+      name: Duration
+      description: Seconds the message stays in the ticker. 0 keeps it until it is cleared. Leave empty to use the board's "Ticker Message Duration" entity.
+      required: false
+      example: 120
+      selector:
+        number:
+          min: 0
+          max: 86400
+          unit_of_measurement: s
+          mode: box
+    message_id:
+      name: Message ID
+      description: A name for this message. Sending again with the same ID replaces it, and it can be cleared by this ID.
+      required: false
+      example: "door"
+      selector:
+        text:
+    config_entry_id:
+      name: Board
+      description: Which board to use. Leave empty to send to every Departures Plus board.
+      required: false
+      selector:
+        config_entry:
+          integration: t_skylt
+clear_ticker:
+  name: Clear ticker messages
+  description: Removes ticker messages from a board running Departures Plus. The permanent ticker text is not touched.
+  fields:
+    message_id:
+      name: Message ID
+      description: Clear only the message with this ID. Leave empty to clear all messages.
+      required: false
+      example: "door"
+      selector:
+        text:
+    config_entry_id:
+      name: Board
+      description: Which board to use. Leave empty to clear on every Departures Plus board.
+      required: false
+      selector:
+        config_entry:
+          integration: t_skylt
