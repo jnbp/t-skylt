@@ -39,7 +39,7 @@ Since 0.3.0 the integration works with two different apps on the board. Which on
 
 | | **Legacy** | **Departures Plus** |
 | :--- | :--- | :--- |
-| **App on the board** | The stock *Departures* app | *Departures Plus*, an alternative departures app for the MatrixBOX firmware with station rotation, line colors and a ticker |
+| **App on the board** | The stock *Departures* app | [Departures Plus](https://github.com/jnbp/matrixbox-departures-plus), an alternative departures app for the MatrixBOX firmware with station rotation, line colors and a ticker |
 | **How Home Assistant talks to it** | Reads the board's web page and sends the same requests a browser would | The app's JSON API |
 | **Entities** | Almost every setting of the stock app, see [Features (Legacy)](#-features-legacy) | A small set for automations, see [Departures Plus](#-departures-plus). Everything else is set on the app's own settings page. |
 | **Ticker messages from Home Assistant** | No | Yes, as a notify entity and as actions |
@@ -123,7 +123,7 @@ In legacy mode this integration exposes almost every known function of the stock
 
 ## ➕ Departures Plus
 
-Departures Plus rotates through any number of stations by itself and is configured on its own settings page on the board (`http://<YOUR-IP>/`). Home Assistant therefore only gets what automations need:
+[Departures Plus](https://github.com/jnbp/matrixbox-departures-plus) rotates through any number of stations by itself and is configured on its own settings page on the board (`http://<YOUR-IP>/`). Home Assistant therefore only gets what automations need:
 
 | Entity | Description |
 | :--- | :--- |
@@ -135,7 +135,7 @@ Departures Plus rotates through any number of stations by itself and is configur
 | **Next Departure: (station)** (sensor) | Minutes until the next departure at each station. Line, destination, data source and the following departures are attributes. |
 | **Ticker** (notify) | Sends a text to the ticker in the board's status row. |
 | **Ticker: Message Duration** (number) | Seconds a notify message stays in the ticker. Default 60, 0 keeps it until cleared. |
-| **Ticker: Wake Display** (switch) | On by default: a ticker message turns a switched-off display on for as long as the message runs. Needs Departures Plus 0.5.0 or newer. |
+| **Ticker: Wake Display** (switch) | On by default: a ticker message is shown even while the display is off. Only the ticker lights up, for as long as the message runs. Needs Departures Plus 0.6.2 or newer. |
 | **Ticker: Permanent Text** (text) | The text that is always in the ticker. Saved on the board. |
 | **System: Temperature / Uptime / Wi-Fi Signal / Active IP** (sensors) | Diagnostics. The first three need Departures Plus 0.5.0 or newer. |
 

@@ -1,6 +1,6 @@
 # Departures Plus
 
-Since 0.3.0 the integration also supports boards running **Departures Plus**, an alternative departures app for the MatrixBOX firmware with station rotation, line colors and a ticker.
+Since 0.3.0 the integration also supports boards running [Departures Plus](https://github.com/jnbp/matrixbox-departures-plus), an alternative departures app for the MatrixBOX firmware with station rotation, line colors and a ticker.
 
 When you add a board, the integration detects which app is running. You can also choose it yourself under **App on the board**:
 
@@ -26,7 +26,7 @@ Departures Plus is configured on its own settings page on the board, so Home Ass
 | **Next Departure: (station)** (sensor) | Minutes until the next departure at each station. Line, destination, data source and the following departures are attributes. |
 | **Ticker** (notify) | Sends a text to the ticker. |
 | **Ticker: Message Duration** (number) | Seconds a notify message stays in the ticker. Default 60, 0 keeps it until cleared. |
-| **Ticker: Wake Display** (switch) | On by default: a ticker message turns a switched-off display on for as long as the message runs. Needs Departures Plus 0.5.0 or newer. |
+| **Ticker: Wake Display** (switch) | On by default: a ticker message is shown even while the display is off. Only the ticker lights up, for as long as the message runs. Needs Departures Plus 0.6.2 or newer (0.5.0 to 0.6.1 turn the whole display on instead). |
 | **Ticker: Permanent Text** (text) | The text that is always in the ticker. Saved on the board. |
 | **System: Temperature / Uptime / Wi-Fi Signal** (sensors) | Diagnostics reported by the board. Need Departures Plus 0.5.0 or newer. |
 
