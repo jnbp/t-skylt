@@ -26,7 +26,9 @@ Departures Plus is configured on its own settings page on the board, so Home Ass
 | **Next Departure: (station)** (sensor) | Minutes until the next departure at each station. Line, destination, data source and the following departures are attributes. |
 | **Ticker** (notify) | Sends a text to the ticker. |
 | **Ticker: Message Duration** (number) | Seconds a notify message stays in the ticker. Default 60, 0 keeps it until cleared. |
+| **Ticker: Wake Display** (switch) | On by default: a ticker message turns a switched-off display on for as long as the message runs. Needs Departures Plus 0.5.0 or newer. |
 | **Ticker: Permanent Text** (text) | The text that is always in the ticker. Saved on the board. |
+| **System: Temperature / Uptime / Wi-Fi Signal** (sensors) | Diagnostics reported by the board. Need Departures Plus 0.5.0 or newer. |
 
 Stations are read when the integration starts. After adding or removing stations on the board, reload the integration.
 
@@ -42,7 +44,7 @@ data:
   message: "Door opened"
 ```
 
-For full control use `t_skylt.ticker_message`. `duration` is in seconds (0 keeps the message until it is cleared), and a `message_id` lets you replace or clear exactly this message later:
+For full control use `t_skylt.ticker_message`. `duration` is in seconds (0 keeps the message until it is cleared), a `message_id` lets you replace or clear exactly this message later, and `wake: true` or `wake: false` overrides the **Ticker: Wake Display** switch for this one message:
 
 ```yaml
 action: t_skylt.ticker_message

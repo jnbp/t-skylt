@@ -9,10 +9,11 @@ import re
 from homeassistant.components.button import ButtonEntity
 from homeassistant.components.number import NumberMode, RestoreNumber, NumberEntity
 from homeassistant.components.select import SelectEntity
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.components.text import TextEntity
 from homeassistant.helpers.entity import DeviceInfo, EntityCategory
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, DEFAULT_TICKER_DURATION
@@ -61,6 +62,31 @@ class PlusPowerSwitch(PlusEntity, SwitchEntity):
 
     async def async_turn_off(self, **kwargs):
         await self.coordinator.set_value(power=0)
+
+
+class PlusTickerWakeSwitch(PlusEntity, SwitchEntity, RestoreEntity):
+    """Whether a ticker message turns a switched-off display on while it runs. Kept in Home Assistant."""
+
+    def __init__(self, coordinator):
+        super().__init__(coordinator, "ticker_wake", "Ticker: Wake Display", "mdi:monitor-eye", EntityCategory.CONFIG)
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_state()
+        if last is not None and last.state in ("on", "off"):
+            self.coordinator.ticker_wake = last.state == "on"
+
+    @property
+    def is_on(self):
+        return self.coordinator.ticker_wake
+
+    async def async_turn_on(self, **kwargs):
+        self.coordinator.ticker_wake = True
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs):
+        self.coordinator.ticker_wake = False
+        self.async_write_ha_state()
 
 
 class PlusBrightnessNumber(PlusEntity, NumberEntity):
@@ -151,7 +177,8 @@ class PlusCurrentStationSensor(PlusEntity, SensorEntity):
     def extra_state_attributes(self):
         d = self.state_data
         return {"mode": d.get("mode"), "phase": d.get("phase"), "display_on": bool(d.get("shown")),
-                "asleep": bool(d.get("asleep")), "ticker_messages": d.get("messages", [])}
+                "asleep": bool(d.get("asleep")), "woken_by_ticker": bool(d.get("woken")),
+                "ticker_messages": d.get("messages", [])}
 
 
 class PlusDepartureSensor(PlusEntity, SensorEntity):
@@ -188,6 +215,20 @@ class PlusDepartureSensor(PlusEntity, SensorEntity):
                 "operator": s.get("operator"), "status": s.get("status"), "departures": nxt}
 
 
+class PlusSystemSensor(PlusEntity, SensorEntity):
+    """A diagnostic value the board reports: temperature, uptime, Wi-Fi signal."""
+
+    def __init__(self, coordinator, key, name, icon, unit, device_class):
+        super().__init__(coordinator, key, f"System: {name}", icon, EntityCategory.DIAGNOSTIC)
+        self._key = key
+        self._attr_native_unit_of_measurement = unit
+        self._attr_device_class = device_class
+
+    @property
+    def native_value(self):
+        return self.state_data.get(self._key)
+
+
 class PlusIPSensor(PlusEntity, SensorEntity):
     def __init__(self, coordinator):
         super().__init__(coordinator, "active_ip", "System: Active IP", "mdi:ip-network", EntityCategory.DIAGNOSTIC)
@@ -214,7 +255,7 @@ class PlusTickerText(PlusEntity, TextEntity):
 
 
 def switches(coordinator):
-    return [PlusPowerSwitch(coordinator)]
+    return [PlusPowerSwitch(coordinator), PlusTickerWakeSwitch(coordinator)]
 
 
 def numbers(coordinator):
@@ -232,7 +273,13 @@ def buttons(coordinator):
 def sensors(coordinator):
     stations = (coordinator.data or {}).get("stations", [])
     seen = []
-    out = [PlusCurrentStationSensor(coordinator), PlusIPSensor(coordinator)]
+    out = [
+        PlusCurrentStationSensor(coordinator),
+        PlusIPSensor(coordinator),
+        PlusSystemSensor(coordinator, "temperature", "Temperature", "mdi:thermometer", "°C", SensorDeviceClass.TEMPERATURE),
+        PlusSystemSensor(coordinator, "uptime", "Uptime", "mdi:clock-outline", "min", SensorDeviceClass.DURATION),
+        PlusSystemSensor(coordinator, "rssi", "Wi-Fi Signal", "mdi:wifi", "dBm", SensorDeviceClass.SIGNAL_STRENGTH),
+    ]
     for s in stations:
         name = s.get("name", "")
         if name and name not in seen:

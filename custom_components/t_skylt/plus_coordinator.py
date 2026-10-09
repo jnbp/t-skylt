@@ -31,6 +31,7 @@ class TSkyltPlusCoordinator(TSkyltCoordinator):
         super().__init__(hass, host)
         self.update_interval = timedelta(seconds=PLUS_POLLING_INTERVAL)
         self.ticker_duration = DEFAULT_TICKER_DURATION
+        self.ticker_wake = True
 
     async def _perform_request(self, target_ip, timeout=20, param=None):
         url = f"http://{target_ip}/{param or 'api/state'}"
@@ -61,12 +62,17 @@ class TSkyltPlusCoordinator(TSkyltCoordinator):
         values["save"] = 1
         await self.set_value(**values)
 
-    async def send_ticker(self, message: str, duration=None, message_id=None):
-        """Show a ticker message. duration in seconds, 0 keeps it until cleared."""
+    async def send_ticker(self, message: str, duration=None, message_id=None, wake=None):
+        """Show a ticker message. duration in seconds, 0 keeps it until cleared.
+
+        wake turns a switched-off display on for as long as the message runs.
+        """
         ttl = self.ticker_duration if duration is None else int(duration)
         query = {"text": message, "ttl": int(ttl)}
         if message_id:
             query["id"] = message_id
+        if self.ticker_wake if wake is None else wake:
+            query["wake"] = 1
         await self.send_command("api/message?" + urllib.parse.urlencode(query, quote_via=urllib.parse.quote))
         await self.async_refresh()
 

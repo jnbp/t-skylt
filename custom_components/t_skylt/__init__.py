@@ -25,6 +25,7 @@ TICKER_MESSAGE_SCHEMA = vol.Schema({
     vol.Required("message"): cv.string,
     vol.Optional("duration"): vol.All(vol.Coerce(int), vol.Range(min=0, max=86400)),
     vol.Optional("message_id"): cv.string,
+    vol.Optional("wake"): cv.boolean,
     vol.Optional("config_entry_id"): cv.string,
 })
 CLEAR_TICKER_SCHEMA = vol.Schema({
@@ -56,7 +57,9 @@ def _register_services(hass: HomeAssistant) -> None:
 
     async def ticker_message(call: ServiceCall) -> None:
         for coordinator in _plus_coordinators(hass, call):
-            await coordinator.send_ticker(call.data["message"], call.data.get("duration"), call.data.get("message_id"))
+            await coordinator.send_ticker(
+                call.data["message"], call.data.get("duration"), call.data.get("message_id"), call.data.get("wake")
+            )
 
     async def clear_ticker(call: ServiceCall) -> None:
         for coordinator in _plus_coordinators(hass, call):

@@ -27,6 +27,12 @@ ticker_message:
       example: "door"
       selector:
         text:
+    wake:
+      name: Wake display
+      description: Turn a switched-off display on for as long as the message runs. Leave empty to use the board's "Ticker Wake Display" switch.
+      required: false
+      selector:
+        boolean:
     config_entry_id:
       name: Board
       description: Which board to use. Leave empty to send to every Departures Plus board.
