@@ -8,7 +8,11 @@ from .const import DOMAIN
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
     coordinator = hass.data[DOMAIN][entry.entry_id]
-    
+    if getattr(coordinator, "is_plus", False):
+        from . import plus
+        async_add_entities(plus.switches(coordinator))
+        return
+
     entities = [
         # Display Group
         TSkyltSwitch(coordinator, "onoff", "?onoff=active", "Display: Power", "mdi:power"),
@@ -21,7 +25,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         TSkyltSwitch(coordinator, "type_train", "?type=train", "Station: Type Train", "mdi:train"),
         TSkyltSwitch(coordinator, "type_tram", "?type=tram", "Station: Type Tram", "mdi:tram"),
         TSkyltSwitch(coordinator, "type_ship", "?type=ship", "Station: Type Ship", "mdi:ferry"),
-        
+
         # View Group
         TSkyltSwitch(coordinator, "listmode", "?listmode=switch", "View: List Mode", "mdi:format-list-bulleted"),
         TSkyltSwitch(coordinator, "clocktime", "?clocktime=switch", "View: Clock/Countdown", "mdi:clock-digital"),

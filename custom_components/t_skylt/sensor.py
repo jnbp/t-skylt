@@ -10,11 +10,15 @@ from .const import DOMAIN
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
     """Set up the T-Skylt sensors."""
     coordinator = hass.data[DOMAIN][entry.entry_id]
+    if getattr(coordinator, "is_plus", False):
+        from . import plus
+        async_add_entities(plus.sensors(coordinator))
+        return
 
     entities = [
         TSkyltSensor(coordinator, "temperature", "System Temperature", "mdi:thermometer", SensorDeviceClass.TEMPERATURE, "°C", EntityCategory.DIAGNOSTIC),
         TSkyltSensor(coordinator, "uptime", "Uptime", "mdi:clock-outline", SensorDeviceClass.DURATION, "min", EntityCategory.DIAGNOSTIC),
-        
+
         # NEW: Active IP Address Sensor
         TSkyltIPSensor(coordinator),
     ]
@@ -64,7 +68,7 @@ class TSkyltIPSensor(CoordinatorEntity, SensorEntity):
     def unique_id(self): return f"{self.coordinator.host}_sensor_active_ip"
     @property
     def icon(self): return "mdi:ip-network"
-    
+
     @property
     def native_value(self):
         # Retrieve the internal _cached_ip variable from the coordinator
