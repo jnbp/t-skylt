@@ -3,18 +3,29 @@
         "step": {
             "user": {
                 "title": "Setup T-Skylt Departure Board",
-                "description": "You can choose between directly using the IP address or the hostname.\n\n**Hostname is recommended** if you use a repeater, since in the case of an IP address change, the hostname will be newly resolved automatically.\n\nThe default hostname is usually `esp32-s3-zero.local`.",
+                "description": "You can choose between directly using the IP address or the hostname.\n\n**Hostname is recommended** if you use a repeater, since in the case of an IP address change, the hostname will be newly resolved automatically.\n\nThe default hostname is usually `esp32-s3-zero.local`.\n\n**App on the board:** leave it on automatic unless detection picks the wrong one. The stock Departures app is \"Legacy\". Departures Plus must be running on the board while you add it.",
                 "data": {
-                    "host": "Hostname or IP Address"
+                    "host": "Hostname or IP Address",
+                    "mode": "App on the board"
                 }
             }
         },
         "error": {
             "cannot_connect": "Failed to connect",
+            "plus_not_running": "Departures Plus is not running on this board. Start the app on the board, or choose automatic detection.",
             "unknown": "Unexpected error"
         },
         "abort": {
             "already_configured": "Device is already configured"
+        }
+    },
+    "selector": {
+        "mode": {
+            "options": {
+                "auto": "Detect automatically",
+                "legacy": "Legacy (stock Departures app)",
+                "plus": "Departures Plus"
+            }
         }
     }
 }
