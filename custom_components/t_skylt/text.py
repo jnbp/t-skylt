@@ -11,16 +11,20 @@ from .const import DOMAIN
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
     coordinator = hass.data[DOMAIN][entry.entry_id]
-    
+    if getattr(coordinator, "is_plus", False):
+        from . import plus
+        async_add_entities(plus.texts(coordinator))
+        return
+
     entities = [
         # Station Group - Using SPECIAL class for Input
         TSkyltStationInput(coordinator, "newstation", "Station: ID Input", "mdi:map-marker"),
         TSkyltStationSearch(coordinator, "searchstation", "Station: Title Search", "mdi:magnify"),
-        
+
         # View Group
         TSkyltText(coordinator, "no_more_departures", "View: No Departures Text", "mdi:message-text-outline"),
         TSkyltText(coordinator, "mins", "View: Minutes Suffix", "mdi:clock-end"),
-        
+
         # System Group
         TSkyltText(coordinator, "user", "System: E-Mail", "mdi:email", EntityCategory.CONFIG),
     ]
@@ -133,10 +137,10 @@ class TSkyltStationSearch(CoordinatorEntity, TextEntity):
         # We don't save this state, but update UI temporarily
         self._attr_native_value = value
         self.async_write_ha_state()
-        
+
         # Fire the new advanced search command on Coordinator
         success = await self.coordinator.send_search_command(value)
-        
+
         # Clear the field a moment later so it acts like a command input
         await asyncio.sleep(2)
         self._attr_native_value = ""
@@ -147,7 +151,7 @@ class TSkyltTimerText(CoordinatorEntity, TextEntity):
     def __init__(self, coordinator, day, type, name):
         super().__init__(coordinator)
         self._day = day
-        self._type = type 
+        self._type = type
         self._name_suffix = name
         self._icon = "mdi:timer-settings"
         self._attr_entity_category = EntityCategory.CONFIG
@@ -159,7 +163,7 @@ class TSkyltTimerText(CoordinatorEntity, TextEntity):
     @property
     def unique_id(self): return f"{self.coordinator.host}_timer_{self._day}_{self._type}"
     @property
-    def native_value(self): 
+    def native_value(self):
         key = f"{self._day.lower()}_{self._type}"
         return self.coordinator.data.get(key, "00:00")
     @property

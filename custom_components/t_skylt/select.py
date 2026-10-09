@@ -11,6 +11,10 @@ from .const import DOMAIN
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
     """Set up the T-Skylt selects."""
     coordinator = hass.data[DOMAIN][entry.entry_id]
+    if getattr(coordinator, "is_plus", False):
+        from . import plus
+        async_add_entities(plus.selects(coordinator))
+        return
 
     entities = [
         # --- STATION CATEGORY ---
@@ -20,7 +24,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
         # 2. Country (Data Provider)
         TSkyltSelect(coordinator, "country", "Station: Country", "mdi:flag",
-                     {"Sweden (SE)": "se", "Germany (DE)": "de", "Netherlands (NL)": "nl", 
+                     {"Sweden (SE)": "se", "Germany (DE)": "de", "Netherlands (NL)": "nl",
                       "Belgium (BE)": "be", "Switzerland (CH)": "ch", "Norway (NO)": "no",
                       "Denmark (DK)": "dk", "Finland (FI)": "fi", "Croatia (CR)": "cr"}),
 
@@ -40,9 +44,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
 
         # Existing
-        TSkyltSelect(coordinator, "maxdest", "Station: Max Departures", "mdi:format-list-numbered", 
+        TSkyltSelect(coordinator, "maxdest", "Station: Max Departures", "mdi:format-list-numbered",
                      [str(i) for i in range(1, 9)]),
-        TSkyltSelect(coordinator, "offset", "Station: Offset / Hide Within", "mdi:clock-start", 
+        TSkyltSelect(coordinator, "offset", "Station: Offset / Hide Within", "mdi:clock-start",
                      [str(i) for i in range(31)]),
 
         # --- DISPLAY CATEGORY ---
@@ -51,11 +55,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                      {"Orange (0)": "0", "Yellow (1)": "1", "White (2)": "2"}),
 
         # --- VIEW CATEGORY ---
-        TSkyltSelect(coordinator, "scroll", "View: Scroll Speed", "mdi:speedometer", 
+        TSkyltSelect(coordinator, "scroll", "View: Scroll Speed", "mdi:speedometer",
                      {"Normal": "0", "Low": "1"}),
 
         # --- SYSTEM / CONFIG ---
-        TSkyltSelect(coordinator, "width", "Display: Width", "mdi:arrow-expand-horizontal", 
+        TSkyltSelect(coordinator, "width", "Display: Width", "mdi:arrow-expand-horizontal",
                      ["XS", "X", "XL"], EntityCategory.CONFIG),
     ]
 
@@ -71,7 +75,7 @@ class TSkyltSelect(CoordinatorEntity, SelectEntity):
         self._key = key
         self._name_suffix = name
         self._icon = icon
-        
+
         # Handle options: can be list or dict {label: value}
         if isinstance(options, dict):
             self._options_map = options
@@ -79,7 +83,7 @@ class TSkyltSelect(CoordinatorEntity, SelectEntity):
         else:
             self._options_map = {opt: opt for opt in options}
             self._attr_options = options
-            
+
         if category:
             self._attr_entity_category = category
 
@@ -99,12 +103,12 @@ class TSkyltSelect(CoordinatorEntity, SelectEntity):
         """Return the current selected option key."""
         # Value from device (e.g., "1" or "be")
         device_val = self.coordinator.data.get(self._key, "")
-        
+
         # Find matching label key for this value
         for label, val in self._options_map.items():
             if str(val) == str(device_val):
                 return label
-        
+
         # Fallback if unknown or initial load (default to first option)
         return self._attr_options[0]
 
@@ -112,10 +116,10 @@ class TSkyltSelect(CoordinatorEntity, SelectEntity):
         """Change the selected option."""
         # Find value for the label
         value_to_send = self._options_map[option]
-        
+
         encoded_val = urllib.parse.quote(value_to_send)
         await self.coordinator.send_command(f"?{self._key}={encoded_val}")
-        
+
         # Optimistic update
         self.coordinator.data[self._key] = value_to_send
         self.async_write_ha_state()
