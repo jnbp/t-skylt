@@ -76,6 +76,12 @@ class TSkyltPlusCoordinator(TSkyltCoordinator):
         await self.send_command("api/message?" + urllib.parse.urlencode(query, quote_via=urllib.parse.quote))
         await self.async_refresh()
 
+    async def set_icon(self, place, icon="", color=""):
+        """One of the three icon places in the status row: a symbol name or up to two letters, and a colour."""
+        p = "icon%d" % int(place)
+        query = {p: str(icon or "")[:12], p + "_c": str(color or "")[:9]}
+        await self.send_command("api/set?" + urllib.parse.urlencode(query, quote_via=urllib.parse.quote))
+
     async def clear_ticker(self, message_id=None):
         query = {"clear": 1}
         if message_id:

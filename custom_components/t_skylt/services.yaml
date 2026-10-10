@@ -58,3 +58,66 @@ clear_ticker:
       selector:
         config_entry:
           integration: t_skylt
+
+set_icon:
+  name: Set status icon
+  description: Shows a symbol or up to two letters in one of the three icon places of the status row on a board running Departures Plus 0.9.0 or newer. An empty icon clears the place.
+  fields:
+    place:
+      name: Place
+      description: Icon place 1, 2 or 3.
+      required: true
+      example: 1
+      selector:
+        number:
+          min: 1
+          max: 3
+          mode: box
+    icon:
+      name: Icon
+      description: A symbol name, or up to two letters. A leading / shows letters that are also a symbol name (/wc). Empty clears the place.
+      required: false
+      example: "wc"
+      selector:
+        select:
+          custom_value: true
+          options:
+            - "wc"
+            - "door"
+            - "window"
+            - "light"
+            - "power"
+            - "house"
+            - "key"
+            - "bell"
+            - "washer"
+            - "dishes"
+            - "dryer"
+            - "coffee"
+            - "trash"
+            - "water"
+            - "battery"
+            - "temp"
+            - "heart"
+            - "mail"
+            - "sun"
+            - "cloud"
+            - "rain"
+            - "snow"
+            - "storm"
+            - "moon"
+            - "dot"
+    color:
+      name: Color
+      description: Empty for the board's LED tone, or white, red, green, blue, yellow, orange or a hex color like #ff0000.
+      required: false
+      example: "red"
+      selector:
+        text:
+    config_entry_id:
+      name: Board
+      description: Which board to use. Leave empty to set it on every Departures Plus board.
+      required: false
+      selector:
+        config_entry:
+          integration: t_skylt

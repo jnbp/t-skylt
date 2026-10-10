@@ -9,7 +9,7 @@ from homeassistant.exceptions import ServiceValidationError
 import homeassistant.helpers.config_validation as cv
 
 from .const import (
-    DOMAIN, CONF_MODE, MODE_PLUS, SERVICE_TICKER_MESSAGE, SERVICE_CLEAR_TICKER,
+    DOMAIN, CONF_MODE, MODE_PLUS, SERVICE_TICKER_MESSAGE, SERVICE_CLEAR_TICKER, SERVICE_SET_ICON,
 )
 from .coordinator import TSkyltCoordinator
 from .plus_coordinator import TSkyltPlusCoordinator
@@ -26,6 +26,12 @@ TICKER_MESSAGE_SCHEMA = vol.Schema({
     vol.Optional("duration"): vol.All(vol.Coerce(int), vol.Range(min=0, max=86400)),
     vol.Optional("message_id"): cv.string,
     vol.Optional("wake"): cv.boolean,
+    vol.Optional("config_entry_id"): cv.string,
+})
+SET_ICON_SCHEMA = vol.Schema({
+    vol.Required("place"): vol.All(vol.Coerce(int), vol.Range(min=1, max=3)),
+    vol.Optional("icon", default=""): cv.string,
+    vol.Optional("color", default=""): cv.string,
     vol.Optional("config_entry_id"): cv.string,
 })
 CLEAR_TICKER_SCHEMA = vol.Schema({
@@ -68,6 +74,12 @@ def _register_services(hass: HomeAssistant) -> None:
     hass.services.async_register(DOMAIN, SERVICE_TICKER_MESSAGE, ticker_message, schema=TICKER_MESSAGE_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_CLEAR_TICKER, clear_ticker, schema=CLEAR_TICKER_SCHEMA)
 
+    async def set_icon(call: ServiceCall) -> None:
+        for coordinator in _plus_coordinators(hass, call):
+            await coordinator.set_icon(call.data["place"], call.data.get("icon", ""), call.data.get("color", ""))
+
+    hass.services.async_register(DOMAIN, SERVICE_SET_ICON, set_icon, schema=SET_ICON_SCHEMA)
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up T-Skylt from a config entry."""
@@ -93,4 +105,5 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if not hass.data[DOMAIN]:
             hass.services.async_remove(DOMAIN, SERVICE_TICKER_MESSAGE)
             hass.services.async_remove(DOMAIN, SERVICE_CLEAR_TICKER)
+            hass.services.async_remove(DOMAIN, SERVICE_SET_ICON)
     return unload_ok

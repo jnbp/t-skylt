@@ -1,10 +1,9 @@
-# 0.3.1 - Ticker wakes the display
+# 0.3.2 - Status icons
 
 **New** ✨
 
-* 💡 **Ticker: Wake Display:** New switch, on by default. A ticker message turns a switched-off display on for as long as the message runs, then the display goes off again. `t_skylt.ticker_message` has a matching optional `wake` field for single messages.
-* 🌡️ **System sensors:** Temperature, uptime and Wi-Fi signal of the board as diagnostic sensors.
+* 🚻 **Set status icon:** New action `t_skylt.set_icon`. It puts one of 25 symbols (WC, door, window, light, power, washer, dishwasher, battery, water, weather symbols and more) or up to two letters into one of the three icon places of the status row, in the LED tone or any color. An empty icon clears the place.
 
-Both need **Departures Plus 0.5.0** or newer on the board. Legacy boards are unchanged.
+Needs **Departures Plus 0.9.0** or newer on the board. Legacy boards are unchanged.
 
-Details: [DEPARTURES_PLUS.md](https://github.com/jnbp/t-skylt/blob/main/DEPARTURES_PLUS.md)
+Details: [README](https://github.com/jnbp/t-skylt#status-icons)

@@ -13,3 +13,4 @@ DEFAULT_TICKER_DURATION = 60  # seconds a notify message stays in the ticker
 
 SERVICE_TICKER_MESSAGE = "ticker_message"
 SERVICE_CLEAR_TICKER = "clear_ticker"
+SERVICE_SET_ICON = "set_icon"

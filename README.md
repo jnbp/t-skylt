@@ -167,6 +167,18 @@ data:
   message_id: window
 ```
 
+### Status icons
+
+Departures Plus 0.9.0 has three icon places in the status row. `t_skylt.set_icon` puts a symbol (`wc`, `door`, `window`, `light`, `power`, `washer`, `battery`, `water`, `sun`, `rain` and more) or up to two letters there, in any color. A leading `/` shows letters that are also a symbol name (`/wc`). An empty `icon` clears the place, so one action can show and hide it. For example a red WC only while the bathroom is taken:
+
+```yaml
+action: t_skylt.set_icon
+data:
+  place: 1
+  icon: "{{ 'wc' if is_state('binary_sensor.bathroom_occupied', 'on') else '' }}"
+  color: red
+```
+
 More details: [DEPARTURES_PLUS.md](DEPARTURES_PLUS.md)
 
 ---
