@@ -167,6 +167,10 @@ data:
   message_id: window
 ```
 
+### Logo
+
+Departures Plus 0.10.0 can show a logo that you upload on its settings page. The button **Logo: Show** brings it up right away, for example from an automation when someone rings the door bell.
+
 ### Status icons
 
 Departures Plus 0.9.0 has three icon places in the status row. `t_skylt.set_icon` puts a symbol (`wc`, `door`, `window`, `light`, `power`, `washer`, `battery`, `water`, `sun`, `rain` and more) or up to two letters there, in any color. A leading `/` shows letters that are also a symbol name (`/wc`). An empty `icon` clears the place, so one action can show and hide it. For example a red WC only while the bathroom is taken:

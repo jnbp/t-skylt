@@ -165,6 +165,14 @@ class PlusNextStationButton(PlusEntity, ButtonEntity):
         await self.coordinator.set_value(next=1)
 
 
+class PlusShowLogoButton(PlusEntity, ButtonEntity):
+    def __init__(self, coordinator):
+        super().__init__(coordinator, "show_logo", "Logo: Show", "mdi:image-frame")
+
+    async def async_press(self) -> None:
+        await self.coordinator.set_value(logo=1)
+
+
 class PlusCurrentStationSensor(PlusEntity, SensorEntity):
     def __init__(self, coordinator):
         super().__init__(coordinator, "current_station", "Station: Current", "mdi:train")
@@ -267,7 +275,7 @@ def selects(coordinator):
 
 
 def buttons(coordinator):
-    return [PlusNextStationButton(coordinator)]
+    return [PlusNextStationButton(coordinator), PlusShowLogoButton(coordinator)]
 
 
 def sensors(coordinator):
