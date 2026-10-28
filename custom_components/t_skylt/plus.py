@@ -157,6 +157,31 @@ class PlusStationSelect(PlusEntity, SelectEntity):
         await self.coordinator.set_value(pin=names.index(option) if option in names else -1)
 
 
+class PlusPresetSelect(PlusEntity, SelectEntity):
+    """Switch between the presets saved on the board's settings page."""
+
+    NONE = "No presets saved"
+
+    def __init__(self, coordinator):
+        super().__init__(coordinator, "preset", "Preset", "mdi:palette-swatch")
+
+    def _names(self):
+        return list(self.state_data.get("presets", []))
+
+    @property
+    def options(self):
+        return self._names() or [self.NONE]
+
+    @property
+    def current_option(self):
+        active = self.state_data.get("preset", "")
+        return active if active in self._names() else None
+
+    async def async_select_option(self, option: str) -> None:
+        if option in self._names():
+            await self.coordinator.set_value(preset=option)
+
+
 class PlusNextStationButton(PlusEntity, ButtonEntity):
     def __init__(self, coordinator):
         super().__init__(coordinator, "next_station", "Station: Next", "mdi:skip-next")
@@ -271,7 +296,7 @@ def numbers(coordinator):
 
 
 def selects(coordinator):
-    return [PlusStationSelect(coordinator)]
+    return [PlusStationSelect(coordinator), PlusPresetSelect(coordinator)]
 
 
 def buttons(coordinator):

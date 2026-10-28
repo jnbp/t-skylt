@@ -1,9 +1,9 @@
-# 0.3.3 - Logo button
+# 0.3.4 - Presets
 
-**New** ✨
+**New**
 
-* 🖼️ **Logo: Show:** a new button shows the logo you uploaded on the board's settings page, right away.
+* **Preset:** a new select switches between the presets saved on the board's settings page, for example a calm look for the evening, by hand or from an automation.
 
-Needs **Departures Plus 0.10.0** or newer on the board. Legacy boards are unchanged.
+Needs **Departures Plus 0.12.0** or newer on the board. Legacy boards are unchanged.
 
-Details: [README](https://github.com/jnbp/t-skylt#logo)
+Details: [README](https://github.com/jnbp/t-skylt#presets)

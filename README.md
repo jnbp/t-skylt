@@ -167,6 +167,10 @@ data:
   message_id: window
 ```
 
+### Presets
+
+Departures Plus 0.12.0 can save its settings under a name on the board's settings page, for example "Day" and "Evening". The select **Preset** switches between them, also from an automation. A preset changes the look and behaviour, the stations stay.
+
 ### Logo
 
 Departures Plus 0.10.0 can show a logo that you upload on its settings page. The button **Logo: Show** brings it up right away, for example from an automation when someone rings the door bell.
